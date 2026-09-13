@@ -2817,7 +2817,7 @@ describe('BaileysAdapter inbound fan-out', () => {
       });
       await new Promise(r => setImmediate(r));
       // The message is still emitted, and it still says it carried an image. sizeBytes is the DECLARED
-      // size: nothing was downloaded, so reporting the cap (as the streaming abort does) would lie.
+      // size: nothing was downloaded, so reporting the cap would lie.
       expect(onMessage).toHaveBeenCalledTimes(1);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const msg = onMessage.mock.calls[0][0] as { media?: unknown; body?: string };
