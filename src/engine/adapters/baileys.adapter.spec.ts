@@ -175,6 +175,17 @@ function streamOf(...chunks: Buffer[]): AsyncIterable<Buffer> & { destroy: () =>
     destroy: jest.fn(),
   };
 }
+/**
+ * Baileys 7.0.0-rc14 `getContentType` (lib/Utils/messages.js), copied because the library is
+ * ESM-only and mocked here: a key matches only when it is `conversation` or contains `Message`, and
+ * senderKeyDistributionMessage is excluded by name.
+ */
+function realGetContentType(content?: Record<string, unknown>): string | undefined {
+  return Object.keys(content ?? {}).find(
+    k => (k === 'conversation' || k.includes('Message')) && k !== 'senderKeyDistributionMessage',
+  );
+}
+
 // sessionId (name) and dbSessionId (Session.id UUID) are deliberately distinct here so assertions
 // below prove auth-dir/logging use the name while messageStore (FK-bound) uses the UUID.
 const newAdapter = (): BaileysAdapter =>
@@ -2699,41 +2710,79 @@ describe('BaileysAdapter inbound fan-out', () => {
     expect(event.senderId).toBe('628111@c.us'); // canonicalized to the neutral dialect
   });
 
-  it('senderKeyDistributionMessage: emits nothing and stores nothing (protocol noise the history path drops, #1568)', async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-    const baileys = jest.requireMock('@whiskeysockets/baileys') as { getContentType: jest.Mock };
-    // Real baileys 7.x getContentType EXCLUDES senderKeyDistributionMessage by name and only matches
-    // keys named `conversation` or containing `Message`, so an SKDM-only message resolves to
-    // undefined, never to 'senderKeyDistributionMessage'. The mock must return the realistic value
-    // or the test pins a code path production cannot reach.
-    baileys.getContentType.mockReturnValue(undefined);
+  describe('contentless protocol traffic on the live path (#1568)', () => {
+    /** Push one group message through the live upsert handler with Baileys' real content-type resolution. */
+    const fireLive = async (
+      id: string,
+      message: Record<string, unknown>,
+    ): Promise<{ onMessage: jest.Mock; debug: jest.SpyInstance }> => {
+      baileys.getContentType.mockImplementation(realGetContentType);
+      const onMessage = jest.fn();
+      const adapter = newAdapter();
+      const logger = (adapter as unknown as { logger: { debug: (m: string, meta?: unknown) => void } }).logger;
+      const debug = jest.spyOn(logger, 'debug').mockImplementation(() => undefined);
+      await adapter.initialize({ onMessage });
+      fakeSock.fire('messages.upsert', {
+        type: 'notify',
+        messages: [
+          {
+            key: { remoteJid: '120363@g.us', fromMe: false, id, participant: '628222@s.whatsapp.net' },
+            message,
+            messageTimestamp: 1700000025,
+          },
+        ],
+      });
+      await new Promise(r => setImmediate(r));
+      return { onMessage, debug };
+    };
 
-    const onMessage = jest.fn();
-    const adapter = newAdapter();
-    await adapter.initialize({ onMessage });
-    fakeSock.fire('messages.upsert', {
-      type: 'notify',
-      messages: [
-        {
-          key: {
-            remoteJid: '120363@g.us',
-            fromMe: false,
-            id: 'SKDM1',
-            participant: '628222@s.whatsapp.net',
-          },
-          message: {
-            senderKeyDistributionMessage: { axolotlSenderKeyDistributionMessage: 'R1NFMTIx...' },
-          },
-          messageTimestamp: 1700000025,
-        },
+    // Signal and history-sync traffic with no user content: every top-level key is protocol noise.
+    it.each<[string, Record<string, unknown>]>([
+      ['a sender-key distribution', { senderKeyDistributionMessage: { groupId: '120363@g.us' } }],
+      [
+        'a sender-key distribution with its context info',
+        { senderKeyDistributionMessage: { groupId: '120363@g.us' }, messageContextInfo: { messageSecret: 'cw==' } },
       ],
+      [
+        'a sender-key distribution with a message-history notice',
+        { senderKeyDistributionMessage: { groupId: '120363@g.us' }, messageHistoryNotice: { contextInfo: {} } },
+      ],
+      // The only noise key getContentType resolves to itself (it contains `Message` and is not excluded).
+      ['a fast-ratchet sender-key distribution', { fastRatchetKeySenderKeyDistributionMessage: { groupId: 'g' } }],
+      ['a message-history bundle', { messageHistoryBundle: { mimetype: 'application/octet-stream' } }],
+    ])('drops %s without emitting or storing it, and logs the drop', async (_label, message) => {
+      const { onMessage, debug } = await fireLive('NOISE1', message);
+      expect(onMessage).not.toHaveBeenCalled();
+      expect(fakeStore.put).not.toHaveBeenCalled();
+      expect(debug).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ msgId: 'NOISE1', remoteJid: '120363@g.us', keys: Object.keys(message) }),
+      );
     });
-    await new Promise(r => setImmediate(r));
-    // A sender-key distribution is Signal protocol traffic every group participant emits on first
-    // write or key rotation; it carries no user content. The history mapper already returns null
-    // for it, so the live path must not deliver a bodyless `unknown` message.received either.
-    expect(onMessage).not.toHaveBeenCalled();
-    expect(fakeStore.put).not.toHaveBeenCalled();
+
+    // No resolvable content type, yet not known noise: a call log (the proto's own `Messsage` spelling
+    // fails the `Message` match) or a lone messageContextInfo, which is what a content type newer than
+    // the bundled proto decodes to. These keep reaching consumers as `unknown`.
+    it.each<[string, Record<string, unknown>]>([
+      ['a call log', { callLogMesssage: { isVideo: false, callOutcome: 1, durationSecs: 12 } }],
+      ['a bare messageContextInfo', { messageContextInfo: { messageSecret: 'cw==' } }],
+    ])('emits and stores %s as unknown', async (_label, message) => {
+      const { onMessage } = await fireLive('UNK1', message);
+      expect(onMessage).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect((onMessage.mock.calls[0][0] as { type: string }).type).toBe('unknown');
+      expect(fakeStore.put).toHaveBeenCalledTimes(1);
+    });
+
+    it('emits a real message that arrives bundled with a sender-key distribution', async () => {
+      const { onMessage } = await fireLive('SKDM_TEXT', {
+        senderKeyDistributionMessage: { groupId: '120363@g.us' },
+        conversation: 'hello group',
+      });
+      expect(onMessage).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(onMessage.mock.calls[0][0]).toMatchObject({ type: 'text', body: 'hello group' });
+    });
   });
 
   it('learns the lid pair carried on a dropped sender-key distribution before dropping it (#1568)', async () => {
