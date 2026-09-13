@@ -227,7 +227,7 @@ List all sessions, scoped to the API key's `allowedSessions`, ordered `createdAt
 ]
 ```
 
-`lastError` is non-null only when `status` is `failed` or `action_required`; any other status clears it. `config` and the raw `proxyUrl` / `proxyType` columns are not present (stripped by `fromEntity`).
+`lastError` is non-null when `status` is `failed` or `action_required`, and while an `initializing` session is retrying a dropped connection on its own; any other status clears it. `config` and the raw `proxyUrl` / `proxyType` columns are not present (stripped by `fromEntity`).
 
 `restriction` reports a limit **WhatsApp itself** has placed on the account, as opposed to `lastError`, which describes a fault on the gateway's side of the link. It is `null` when there is none, and otherwise `{ kind, code, expiresAt }`:
 
