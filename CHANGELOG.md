@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.23.5] - 2026-09-13
+## [0.23.5] - 2026-09-14
 
 ### Security
 
@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A Baileys reconnect loop is observable through `lastError` on the session, a `session.reconnect_loop` webhook every fifth attempt and reconnect metrics; a QR left unscanned is not reported as one ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
 - A Baileys connection attempt refused at the WebSocket upgrade is closed and retried instead of leaving the session at `initializing` ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
 - The dashboard session card keeps the phone number, session id and last-active time while a linked session reconnects, instead of the pairing placeholder ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
-- The Sessions page reports a dead live-event feed, and both it and the Chats page re-read their data once the feed recovers, including a feed that never connected.
+- The Sessions page reports a dead live-event feed. When the feed recovers from a gap, the Sessions page re-reads its list and the Chats page refetches the open thread and contact statuses; a feed that never connected counts as a gap only once it has failed and shown the reconnect banner.
 - A Baileys media download aborted at `MEDIA_DOWNLOAD_MAX_BYTES` reports the bytes received as `sizeBytes`, and a timed-out one its declared size, instead of the cap.
 - The webhook docs state that at the default limits media above about 768 KiB reaches webhooks as the omitted marker, and how to raise both limits ([#1569](https://github.com/rmyndharis/OpenWA/issues/1569)). Thanks @Magnarks for the report.
 - The takeover sweep marks as disconnected any session left `ready`, `initializing`, `authenticating` or `action_required` by a node that never returned, regardless of `AUTO_START_SESSIONS`.
@@ -41,6 +41,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dependencies
 
 - `multer` 2.2.0 to 2.3.0 via an override, closing three high-severity multipart denial-of-service advisories. It ships in the runtime tree.
+
+### Upgrade notes (behavior changes)
+
+- whatsapp-web.js: back up `sessions/` before upgrading. A rollback to an image with an older browser major deletes the stored WhatsApp logins unless `sessions/` is restored from that backup, and a session first paired after the upgrade must be paired again (see `docs/11-operational-runbooks.md`). Baileys sessions are unaffected.
+- The amd64 image moves from Chrome for Testing 146 to 153, so every amd64 rollback to 0.23.4 or earlier crosses a browser major; the arm64 image runs the chromium Debian ships at build time, whose major can differ between releases.
+- A `LOG_LEVEL` other than `error`, `warn`, `info`, `debug` or `verbose` now stops the boot instead of logging at info.
+- Multi-node deployments run the lapsed-status correction even with `AUTO_START_SESSIONS` off, so every node needs a synced clock and, on PostgreSQL, one time zone without daylight saving (`TZ=UTC` recommended); otherwise live sessions can be marked disconnected (see `docs/13-horizontal-scaling.md`).
 
 ## [0.23.4] - 2026-09-05
 
