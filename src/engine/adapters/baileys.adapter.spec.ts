@@ -1119,9 +1119,15 @@ describe('BaileysAdapter reconnect policy — unlimited backoff (I4 hardening)',
     expect(baileys().default).toHaveBeenCalledTimes(1);
   });
 
-  const fireClose = (statusCode: number): void => {
-    fakeSock.fire('connection.update', { connection: 'close', lastDisconnect: { error: { output: { statusCode } } } });
+  const fireClose = (statusCode: number, message?: string): void => {
+    fakeSock.fire('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { message, output: { statusCode } } },
+    });
   };
+
+  // The Boom Baileys ends an unscanned socket with (Socket/socket.js, genPairQR).
+  const QR_REFS_ENDED = 'QR refs attempts ended';
 
   /**
    * Deliver a QR on the current socket and wait for the lifecycle to publish it. The renderer's PNG
@@ -1142,11 +1148,11 @@ describe('BaileysAdapter reconnect policy — unlimited backoff (I4 hardening)',
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
-    for (let window = 1; window <= 6; window++) {
+    for (let window = 1; window <= 8; window++) {
       await showQr(`QR-${window}`);
       expect(adapter.getStatus()).toBe(EngineStatus.QR_READY);
       await jest.advanceTimersByTimeAsync(160_000);
-      fireClose(408);
+      fireClose(408, QR_REFS_ENDED);
       expect(adapter.getStatus()).toBe(EngineStatus.INITIALIZING);
 
       // Always the first backoff step: nothing at 999 ms, the new socket at 1 s.
@@ -1157,12 +1163,59 @@ describe('BaileysAdapter reconnect policy — unlimited backoff (I4 hardening)',
     }
     expect(onReconnecting).not.toHaveBeenCalled();
 
-    // A socket that then fails before any QR opens a fresh episode: attempt 1, not attempt 7.
+    // A socket that then fails before any QR opens a fresh episode: attempt 1, not attempt 9.
     fireClose(408);
     expect(onReconnecting.mock.calls).toEqual([[1, 1_000]]);
   });
 
-  it('a QR ends the streak: the restart WhatsApp asks for after a scan is attempt 1 again', async () => {
+  it('a QR window that runs out ends the streak, so a QR left unscanned never reaches the loop alert', async () => {
+    const onReconnecting = jest.fn();
+    await initWithRealTimers({ onReconnecting });
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    for (let window = 1; window <= 6; window++) {
+      await showQr(`QR-${window}a`);
+      fireClose(428);
+      await jest.advanceTimersByTimeAsync(1_000);
+      await showQr(`QR-${window}b`);
+      fireClose(408, QR_REFS_ENDED);
+      await jest.advanceTimersByTimeAsync(1_000);
+    }
+
+    expect(onReconnecting.mock.calls).toEqual(Array.from({ length: 6 }, () => [1, 1_000]));
+  });
+
+  // Only the QR expiry is exempt. WhatsApp or a proxy shedding the socket after it served a QR is a
+  // failure like any other, and left uncounted it would open a new registration every second, unseen.
+  it.each([
+    { reason: '503', statusCode: 503, message: undefined },
+    { reason: '500', statusCode: 500, message: undefined },
+    { reason: '428', statusCode: 428, message: undefined },
+    { reason: 'lost connection 408', statusCode: 408, message: 'Connection was lost' },
+  ])('a $reason close while a QR waits counts and backs off', async ({ statusCode, message }) => {
+    const onReconnecting = jest.fn();
+    await initWithRealTimers({ onReconnecting });
+    baileys().default.mockClear();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    const delays = [1_000, 2_000, 4_000, 8_000, 16_000];
+    for (const [cycle, delay] of delays.entries()) {
+      await showQr(`QR-${cycle}`);
+      expect(onReconnecting).toHaveBeenCalledTimes(cycle);
+      fireClose(statusCode, message);
+      await jest.advanceTimersByTimeAsync(delay - 1);
+      expect(baileys().default).toHaveBeenCalledTimes(cycle);
+      await jest.advanceTimersByTimeAsync(1);
+      expect(baileys().default).toHaveBeenCalledTimes(cycle + 1);
+    }
+
+    // Attempt 5 is the one the session layer turns into the reconnect-loop alert.
+    expect(onReconnecting.mock.calls).toEqual(delays.map((delay, cycle) => [cycle + 1, delay]));
+  });
+
+  it('a scan ends the streak: the restart WhatsApp asks for after it is attempt 1 again', async () => {
     const onReconnecting = jest.fn();
     await initWithRealTimers({ onReconnecting });
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
@@ -1170,9 +1223,10 @@ describe('BaileysAdapter reconnect policy — unlimited backoff (I4 hardening)',
 
     fireClose(408);
     await jest.advanceTimersByTimeAsync(1_000);
+    await showQr('QR-1');
     fireClose(503);
     await jest.advanceTimersByTimeAsync(2_000);
-    await showQr('QR-1');
+    await showQr('QR-2');
     fakeSock.fire('connection.update', { isNewLogin: true });
     onReconnecting.mockClear();
 
