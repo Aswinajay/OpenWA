@@ -54,6 +54,14 @@ function exportEnvelope(): Record<string, unknown> {
 }
 
 describe('ImportDataDto', () => {
+  it('publishes the table count the restore actually clears', () => {
+    const snapshot = JSON.parse(readFileSync(join(__dirname, '..', '..', '..', '..', 'openapi.json'), 'utf8')) as {
+      components: { schemas: Record<string, { properties: Record<string, { description?: string }> }> };
+    };
+    const description = snapshot.components.schemas.ImportDataDto.properties.tables.description;
+    expect(description).toContain(`Every one of the ${TABLE_IMPORTERS.length} migration tables`);
+  });
+
   it('rejects a body with no tables, naming the field', async () => {
     const { errors } = await run({ force: true });
     // Before this DTO the inline `@Body()` type erased, so this body reached the restore and threw
