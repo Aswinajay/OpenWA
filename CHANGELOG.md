@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A bulk batch sends each message through the session's current engine, so a reconnect or restart mid-batch no longer fails every remaining message.
 - `POST /messages/send-bulk` answers 400 for an item with an empty `chatId`, a text item without text, or a media item without a `url` or `base64` under its type; such items used to be accepted with 202 and fail later.
 - `POST /messages/send-bulk` answers 400, not 500, when a concurrent request already created the same `batchId`.
+- `PUT /templates/:id` answers 400, not 500, for a `null` `name` or `body`.
+- `POST /messages/send-template` without `templateId` or `templateName` answers 400 instead of 404.
 
 ## [0.23.5] - 2026-09-14
 

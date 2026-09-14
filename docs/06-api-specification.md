@@ -1713,7 +1713,7 @@ Render a stored text template (header/body/footer joined by blank lines, `{{vars
 
 Delegates to the send-text path after rendering.
 
-**Errors:** `400` unknown body field, validation failure, or session not active · `401` missing/invalid API key · `403` key role below OPERATOR · `404` session or template not found · `500` engine error · `409` conflict or engine not ready (retryable)
+**Errors:** `400` unknown body field, validation failure, neither `templateId` nor `templateName` given, or session not active · `401` missing/invalid API key · `403` key role below OPERATOR · `404` session or template not found · `500` engine error · `409` conflict or engine not ready (retryable)
 
 #### POST /api/sessions/:sessionId/messages/send-image
 
@@ -3369,8 +3369,8 @@ Update a template's name/body/header/footer (partial; only provided fields chang
 
 | Field  | Type   | Required | Constraints                           | Description                                                                                                                                                         |
 | ------ | ------ | -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| name   | string | no       | if present: non-empty, max 100 chars  | Applied only when not `undefined`. Duplicate name → `409`.                                                                                                          |
-| body   | string | no       | if present: non-empty, max 4096 chars | Applied only when not `undefined`.                                                                                                                                  |
+| name   | string | no       | if present: non-empty, max 100 chars  | Applied only when not `undefined`; explicit `null` → `400`. Duplicate name → `409`.                                                                                 |
+| body   | string | no       | if present: non-empty, max 4096 chars | Applied only when not `undefined`; explicit `null` → `400`.                                                                                                         |
 | header | string | no       | max 1024 chars                        | Applied only when not `undefined`. The update path does **not** coerce to `null`, so passing explicit `null` fails `@IsString`; omit the key to leave it unchanged. |
 | footer | string | no       | max 1024 chars                        | Applied only when not `undefined`.                                                                                                                                  |
 
