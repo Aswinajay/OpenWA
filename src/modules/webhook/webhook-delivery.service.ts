@@ -644,11 +644,14 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
             'webhook_dispatch_capacity_exceeded',
             ctx,
           );
+          // Shed on purpose: the failure row is the record, so a replay must not undo the shedding.
+          await this.outbox.close(webhook.id, idempotencyKey, 'failed');
           return;
         }
         if (error instanceof Error && error.message === 'ConcurrencyLimiter closed') {
           // Rejected by the shutdown drain before dispatching — record it like any other
-          // undelivered delivery, and track the write so onModuleDestroy can await it (the
+          // undelivered delivery, retire its outbox row so it is not replayed after restart, and
+          // track both writes so onModuleDestroy can await them (the
           // limiter slot bookkeeping no longer covers this task).
           const record = this.recordUndelivered(
             webhook,
@@ -657,7 +660,7 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
             error,
             'webhook_dispatch_shutdown',
             ctx,
-          );
+          ).then(() => this.outbox.close(webhook.id, idempotencyKey, 'failed'));
           this.pendingBookkeeping.add(record);
           try {
             await record;
