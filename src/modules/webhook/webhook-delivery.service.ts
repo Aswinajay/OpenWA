@@ -97,6 +97,13 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
   >();
   /** Late bookkeeping (dead-letter rows) written by tasks the limiter already released — awaited on shutdown. */
   private readonly pendingBookkeeping = new Set<Promise<void>>();
+  /**
+   * Outbox rows this node still owns, by idempotency key and counted (the same key can be dispatched
+   * twice), from the moment the row is opened until its dispatch settles: parked in the limiter,
+   * holding a slot, or inside a direct retry loop. The reconciler skips these so a slow delivery is
+   * not replayed alongside itself.
+   */
+  private readonly locallyPending = new Map<string, number>();
 
   constructor(
     @InjectRepository(Webhook, 'data')
@@ -616,6 +623,28 @@ export class WebhookDeliveryService implements OnModuleInit, OnModuleDestroy {
       deliveryId,
       payload: ctx.baseData,
     });
+    this.locallyPending.set(idempotencyKey, (this.locallyPending.get(idempotencyKey) ?? 0) + 1);
+    try {
+      await this.runLimited(webhook, deliveryId, idempotencyKey, ctx);
+    } finally {
+      const left = (this.locallyPending.get(idempotencyKey) ?? 1) - 1;
+      if (left > 0) this.locallyPending.set(idempotencyKey, left);
+      else this.locallyPending.delete(idempotencyKey);
+    }
+  }
+
+  /** True while a dispatch on this node still owns the outbox row for this key. */
+  isLocallyPending(idempotencyKey: string): boolean {
+    return this.locallyPending.has(idempotencyKey);
+  }
+
+  private async runLimited(
+    webhook: Webhook,
+    deliveryId: string,
+    idempotencyKey: string,
+    ctx: DispatchEventContext,
+  ): Promise<void> {
+    const { sessionId, event } = ctx;
     await this.dispatchLimiter
       .run(async () => {
         this.inFlightDeliveries.set(deliveryId, {

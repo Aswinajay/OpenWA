@@ -353,6 +353,36 @@ describe('WebhookDeliveryService', () => {
       // purpose and leave a failure row behind for an event that was delivered after all.
       expect(outboxService.close).toHaveBeenCalledWith('wh-b', expect.stringMatching(/_wh-b$/), 'failed');
       expect(outboxService.close).toHaveBeenCalledWith('wh-a', expect.stringMatching(/_wh-a$/), 'dispatched');
+      expect(service.isLocallyPending((outboxService.close.mock.calls as string[][])[0][1])).toBe(false);
+    });
+
+    it('reports a delivery as locally pending while it is parked or in flight, and releases it once settled', async () => {
+      const wA = createMockWebhook({ id: 'wh-a', url: 'https://a.example/hook', events: ['message.received'] });
+      const wB = createMockWebhook({ id: 'wh-b', url: 'https://b.example/hook', events: ['message.received'] });
+      (repository.find as jest.Mock).mockResolvedValue([wA, wB]);
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+      (hookManager.execute as jest.Mock).mockImplementation((_event: string, data: unknown) =>
+        Promise.resolve({ continue: true, data }),
+      );
+      // One slot: A holds it, B parks behind it.
+      (service as unknown as { dispatchLimiter: ConcurrencyLimiter }).dispatchLimiter = new ConcurrencyLimiter(1, 10);
+
+      let release: (value: unknown) => void = () => undefined;
+      mockFetch.mockImplementation(() => new Promise(resolve => (release = resolve)));
+
+      const pending = service.dispatch('sess-1', 'message.received', { from: 'x@c.us' });
+      for (let i = 0; i < 20 && mockFetch.mock.calls.length === 0; i++) await new Promise(r => setImmediate(r));
+
+      const keys = (outboxService.open.mock.calls as Array<[{ idempotencyKey: string }]>).map(c => c[0].idempotencyKey);
+      expect(keys).toHaveLength(2);
+      for (const key of keys) expect(service.isLocallyPending(key)).toBe(true);
+
+      release({ ok: true, status: 200 });
+      for (let i = 0; i < 20 && mockFetch.mock.calls.length < 2; i++) await new Promise(r => setImmediate(r));
+      release({ ok: true, status: 200 });
+      await pending;
+
+      for (const key of keys) expect(service.isLocallyPending(key)).toBe(false);
     });
 
     it('salts each sibling webhook with a distinct idempotency key so one receiver cannot dedupe out another', async () => {
