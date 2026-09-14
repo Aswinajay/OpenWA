@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PUT /templates/:id` answers 400, not 500, for a `null` `name` or `body`.
 - `GET /api/search` answers 400, not 500, for a fractional `limit` or `offset`.
 - `POST /messages/send-template` without `templateId` or `templateName` answers 400 instead of 404.
+- The label upsert documentation no longer says omitted fields are kept: the write replaces the whole label, so an omitted name or colour is not preserved.
 
 ## [0.23.5] - 2026-09-14
 
