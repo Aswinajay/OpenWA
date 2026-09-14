@@ -239,14 +239,17 @@ export class SessionProxyInterceptor implements NestInterceptor {
       if (body.length > 0) response.send(body);
       else response.end();
     } catch (error) {
-      this.logger.warn(`Forwarding to session owner '${ownerNodeId}' failed`, {
-        ownerNodeUrl,
-        error: error instanceof Error ? error.message : String(error),
-      });
       // Duck-typed rather than `instanceof`: fetch rejects with a DOMException on timeout, and its
       // errors are not guaranteed to share this context's Error class.
       const failure = (error ?? {}) as { name?: unknown; cause?: { code?: unknown } };
       const code = failure.cause?.code;
+      // fetch reports every network failure as 'fetch failed'; the cause code (a TLS certificate
+      // error, a DNS failure) is what tells the operator what went wrong.
+      this.logger.warn(`Forwarding to session owner '${ownerNodeId}' failed`, {
+        ownerNodeUrl,
+        error: error instanceof Error ? error.message : String(error),
+        cause: code,
+      });
       if (target === undefined || (typeof code === 'string' && NOT_DISPATCHED_CODES.has(code))) {
         // Nothing reached the owner: 503 is the honest, retryable answer.
         response.status(503).json({
@@ -258,9 +261,10 @@ export class SessionProxyInterceptor implements NestInterceptor {
         });
         return;
       }
-      // Anything else may have happened after the request was sent, so the owner may have acted on
-      // it (a message may be out). Never 503 here: clients treat 503 as declined-before-acting and
-      // replay non-idempotent sends on it.
+      // Anything else may have happened after the request was sent (an unlisted error such as a TLS
+      // handshake failure happens before it, but cannot be told apart), so the owner may have acted
+      // on it. Never 503 here: clients treat 503 as declined-before-acting and replay non-idempotent
+      // sends on it.
       const timedOut = failure.name === 'TimeoutError' || failure.name === 'AbortError';
       const status = timedOut ? 504 : 502;
       response.status(status).json({
@@ -268,8 +272,8 @@ export class SessionProxyInterceptor implements NestInterceptor {
         message: timedOut
           ? `node '${ownerNodeId}', which hosts this session, did not answer within ${timeoutMs}ms; ` +
             'the request may still have been carried out there'
-          : `forwarding to node '${ownerNodeId}', which hosts this session, failed after the request was sent; ` +
-            'it may have been carried out there',
+          : `forwarding to node '${ownerNodeId}', which hosts this session, failed, possibly after the request ` +
+            'was sent; it may have been carried out there, check the owner node and its NODE_URL',
         error: timedOut ? 'Gateway Timeout' : 'Bad Gateway',
       });
     }

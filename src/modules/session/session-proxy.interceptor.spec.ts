@@ -365,10 +365,19 @@ describe('SessionProxyInterceptor', () => {
         req => req.socket.destroy(),
         async url => {
           const { interceptor, context, next, res } = build({ row: row({ nodeUrl: url }), req: sendRequest() });
+          const warn = jest.spyOn((interceptor as unknown as { logger: { warn: () => void } }).logger, 'warn');
           await interceptor.intercept(context, next);
 
           expect(res.status).toHaveBeenCalledTimes(1);
           expect(res.status).toHaveBeenCalledWith(502);
+          // A 502 can also come from a failure before anything was sent (an untrusted TLS
+          // certificate), so the answer must not claim a send and must point at NODE_URL.
+          const { message } = (res.json.mock.calls[0] as [{ message: string }])[0];
+          expect(message).toContain('possibly after the request was sent');
+          expect(message).toContain('NODE_URL');
+          // fetch only says 'fetch failed'; the cause code is what names the real failure.
+          const [, logged] = warn.mock.calls[0] as unknown as [string, { cause: unknown }];
+          expect(logged.cause).toMatch(/^[A-Z_]+$/);
         },
       );
     });
