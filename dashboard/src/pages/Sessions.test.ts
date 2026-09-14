@@ -96,6 +96,7 @@ function resetFetchCalls(): void {
   sessionProxy = { enabled: false, proxyType: null, proxyHost: null, hasCredentials: false };
   proxyGetFails = false;
   sessionListFailures = 0;
+  distinctFailureMessages = false;
 }
 
 function findFetchCall(method: string, path: string): FetchCall | undefined {
@@ -112,6 +113,8 @@ let configPatchFails = false;
 let proxyGetFails = false;
 // How many of the next GET /api/sessions reads fail, as they do while the gateway is down.
 let sessionListFailures = 0;
+// Whether each failed read carries its own message, as a 502, a 504 and a dropped connection do.
+let distinctFailureMessages = false;
 let sessionProxy = {
   enabled: false,
   proxyType: null as string | null,
@@ -138,7 +141,10 @@ function installFetchStub(): void {
     if (method === 'GET' && path === '/api/sessions') {
       if (sessionListFailures > 0) {
         sessionListFailures -= 1;
-        return Promise.resolve(jsonResponse({ message: 'gateway unavailable' }, 503));
+        const message = distinctFailureMessages
+          ? `gateway unavailable (${sessionListFailures})`
+          : 'gateway unavailable';
+        return Promise.resolve(jsonResponse({ message }, 503));
       }
       return Promise.resolve(jsonResponse(SESSIONS));
     }
@@ -564,6 +570,27 @@ test('a failed mount read is retried when the feed first connects after its own 
   await waitFor(() => assert.equal(listReads(), 2));
   await screen.findByText('new-device');
   assert.equal(screen.queryByText('gateway unavailable') === null, true, 'the failed read error is still shown');
+});
+
+test('a connect retries a failed list read once, even when each failure carries a new message', async () => {
+  const { screen, act } = rtl;
+  resetFetchCalls();
+  sessionListFailures = 10;
+  distinctFailureMessages = true;
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  holdConnect();
+  renderSessions();
+
+  await screen.findByText('gateway unavailable (9)');
+  const listReads = (): number => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  act(() => socket.receive('connect'));
+
+  await screen.findByText('gateway unavailable (8)');
+  // Give a re-read driven by the changed error time to fire before counting.
+  await act(() => new Promise(resolve => setTimeout(resolve, 50)));
+  assert.equal(listReads(), 2);
 });
 
 test('a read-only key gets no Show QR button, since the QR is operator-only', async () => {

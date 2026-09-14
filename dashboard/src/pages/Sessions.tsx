@@ -266,9 +266,19 @@ export function Sessions() {
   // A connected feed means the gateway answers again, but the feed only reports a RECONNECT: a first
   // connect that lands after socket.io's own retries (the gateway was restarting at mount) fires no
   // onReconnect, and no status push re-reads the list, so the failed mount read would stay on screen
-  // with no cards. `error` is a dependency so a read that fails after the connect is retried once too.
+  // with no cards. `error` is a dependency so a read that fails after the connect is retried too, but
+  // only once per connect: failures whose messages differ (a 502, then a 504) would otherwise each
+  // change `error` and re-read the list with no backoff for as long as the upstream stays down.
+  const retriedThisConnect = useRef(false);
   useEffect(() => {
-    if (isConnected && listReadFailed.current) void fetchSessions();
+    if (!isConnected) {
+      retriedThisConnect.current = false;
+      return;
+    }
+    if (listReadFailed.current && !retriedThisConnect.current) {
+      retriedThisConnect.current = true;
+      void fetchSessions();
+    }
   }, [isConnected, error, fetchSessions]);
 
   const handleDelete = async (id: string) => {
