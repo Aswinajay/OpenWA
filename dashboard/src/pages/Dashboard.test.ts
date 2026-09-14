@@ -9,6 +9,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 let webhooksStatus = 403;
+let webhookList: unknown[] = [];
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
@@ -21,7 +22,7 @@ function installFetchStub(): void {
     if (path === '/api/sessions') return Promise.resolve(jsonResponse([]));
     if (path === '/api/webhooks') {
       return webhooksStatus === 200
-        ? Promise.resolve(jsonResponse([]))
+        ? Promise.resolve(jsonResponse(webhookList))
         : Promise.resolve(jsonResponse({ message: 'Insufficient permissions. Required: operator' }, webhooksStatus));
     }
     // Everything else, the admin-only overview included, is refused.
@@ -53,6 +54,7 @@ afterEach(() => {
   rtl.cleanup();
   queryClient?.clear();
   queryClient = undefined;
+  webhookList = [];
 });
 
 function renderDashboard(): void {
@@ -78,6 +80,19 @@ test('a refused webhook read shows the unavailable placeholder, not zero webhook
   // The overview card is refused too, so its placeholder is the one the webhook card must match.
   await rtl.waitFor(() => assert.equal(statValue('Webhooks Configured'), statValue('Messages Today')));
   assert.notEqual(statValue('Webhooks Configured'), '0');
+});
+
+test('a failed background refetch keeps counting the cached webhooks', async () => {
+  webhooksStatus = 200;
+  webhookList = [{ id: 'w1', url: 'https://example.test/hook', events: [] }];
+  renderDashboard();
+  await rtl.screen.findByText('Webhooks Configured');
+  await rtl.waitFor(() => assert.equal(statValue('Webhooks Configured'), '1'));
+
+  webhooksStatus = 502;
+  await rtl.act(() => queryClient!.refetchQueries({ queryKey: ['webhooks'] }));
+  await rtl.waitFor(() => assert.equal(queryClient!.getQueryState(['webhooks'])?.status, 'error'));
+  assert.equal(statValue('Webhooks Configured'), '1');
 });
 
 test('a successful empty webhook read still counts zero', async () => {

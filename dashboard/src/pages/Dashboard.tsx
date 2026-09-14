@@ -24,7 +24,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { data: sessions = [], isLoading: loadingSessions, error: sessionsError } = useSessionsQuery();
   const { data: stats } = useSessionStatsQuery();
-  const { data: webhooks = [], isError: webhooksFailed } = useWebhooksQuery();
+  const { data: webhooks, isError: webhooksFailed } = useWebhooksQuery();
   // /stats/overview is ADMIN-only; for a non-admin key it 403s → overview stays undefined and the
   // message cards fall back to '—' without breaking the (un-gated) session cards.
   const { data: overview } = useStatsOverviewQuery();
@@ -36,7 +36,8 @@ export function Dashboard() {
   const error =
     sessionsError instanceof Error ? sessionsError.message : sessionsError ? t('dashboard.loadError') : null;
   // GET /webhooks is OPERATOR-only, so a viewer key always fails it: a failed read is not zero webhooks.
-  const webhookCount = webhooksFailed ? unavailable : webhooks.length;
+  // A failed background refetch keeps the cached list, which still counts.
+  const webhookCount = webhooksFailed && !webhooks ? unavailable : (webhooks ?? []).length;
 
   const handleDisconnect = async (id: string) => {
     try {
