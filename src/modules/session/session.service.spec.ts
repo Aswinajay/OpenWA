@@ -2528,18 +2528,22 @@ describe('SessionService', () => {
       expect(repository.update).not.toHaveBeenCalled();
     });
 
-    // The takeover sweep adopts every corrected status anyway, so a correction never changes what it
-    // adopts. QR_READY is the exception: the sweep never adopts a mid-pairing session but does adopt a
-    // DISCONNECTED one with a phone, so rewriting it would launch an engine that only renders a QR.
-    it('corrects every running status the takeover sweep adopts, and leaves QR_READY alone', async () => {
+    // A correction must never change what the takeover sweep adopts. It adopts every other corrected
+    // status anyway, and never adopts a row without a phone, so a QR_READY row is corrected only while
+    // it has none: the sweep does adopt a DISCONNECTED row with a phone, and rewriting one of those
+    // would launch an engine that only renders a QR nobody asked for.
+    it('corrects every running status the takeover sweep adopts, and QR_READY only without a phone', async () => {
       (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
       const rows = [
-        SessionStatus.READY,
-        SessionStatus.INITIALIZING,
-        SessionStatus.AUTHENTICATING,
-        SessionStatus.ACTION_REQUIRED,
-        SessionStatus.QR_READY,
-      ].map(status => stranded({ id: status, status, phone: '628123' }));
+        ...[
+          SessionStatus.READY,
+          SessionStatus.INITIALIZING,
+          SessionStatus.AUTHENTICATING,
+          SessionStatus.ACTION_REQUIRED,
+        ].map(status => stranded({ id: status, status, phone: '628123' })),
+        stranded({ id: 'qr-unlinked', status: SessionStatus.QR_READY, phone: null }),
+        stranded({ id: 'qr-linked', status: SessionStatus.QR_READY, phone: '628123' }),
+      ];
 
       const marked = await service.markLapsedDisconnected(rows, GONE_BEFORE);
 
@@ -2548,6 +2552,7 @@ describe('SessionService', () => {
         SessionStatus.INITIALIZING,
         SessionStatus.AUTHENTICATING,
         SessionStatus.ACTION_REQUIRED,
+        'qr-unlinked',
       ]);
     });
 
@@ -2635,6 +2640,40 @@ describe('SessionService', () => {
         expect(await statusOf(renewed.id)).toBe(SessionStatus.READY);
         expect(await statusOf(lapsedOnce.id)).toBe(SessionStatus.READY);
         expect(await statusOf(gone.id)).toBe(SessionStatus.DISCONNECTED);
+      });
+
+      // The phone is read in the same snapshot, so it can be stale by the time the write lands: a
+      // pairing that completes in between must not be rewritten into a DISCONNECTED row with a phone,
+      // which is exactly what the sweep adopts.
+      it('writes a QR_READY row only while it still has no phone when the write lands', async () => {
+        const now = Date.now();
+        const seed = (name: string, status: SessionStatus, phone: string | null): Promise<Session> =>
+          sessions.save(
+            sessions.create({
+              name,
+              status,
+              phone,
+              config: {},
+              nodeId: 'dead-node',
+              leaseExpiresAt: new Date(now - 3 * TTL_MS),
+            }),
+          );
+        const pairing = await seed('pairing', SessionStatus.QR_READY, null);
+        const pairedMeanwhile = await seed('paired-meanwhile', SessionStatus.QR_READY, null);
+        const relinking = await seed('relinking', SessionStatus.QR_READY, '628123');
+        const linked = await seed('linked', SessionStatus.READY, '628456');
+        const snapshot = await sessions.find();
+
+        await sessions.update({ id: pairedMeanwhile.id }, { phone: '628789' });
+
+        const marked = await service.markLapsedDisconnected(snapshot, new Date(now - 2 * TTL_MS));
+
+        expect([...marked].sort()).toEqual([pairing.id, linked.id].sort());
+        const statusOf = async (id: string): Promise<SessionStatus> => (await sessions.findOneByOrFail({ id })).status;
+        expect(await statusOf(pairing.id)).toBe(SessionStatus.DISCONNECTED);
+        expect(await statusOf(pairedMeanwhile.id)).toBe(SessionStatus.QR_READY);
+        expect(await statusOf(relinking.id)).toBe(SessionStatus.QR_READY);
+        expect(await statusOf(linked.id)).toBe(SessionStatus.DISCONNECTED);
       });
     });
   });

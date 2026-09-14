@@ -39,7 +39,8 @@
 > because it also has a job that starts nothing: a row a vanished node left `ready`, `initializing`,
 > `authenticating` or `action_required` is marked disconnected once its lease expired more than two
 > TTLs ago, which is three TTLs after the holder's last renewal plus up to one sweep interval. A
-> `qr_ready` row keeps its status, so the correction never makes a mid-pairing session adoptable.
+> `qr_ready` row is marked too while it has no phone, since the sweep never adopts a row without one;
+> a `qr_ready` row with a phone keeps its status, so the correction never makes it adoptable.
 > Nothing else revisits such a row, since the boot reset skips a foreign claim that is still live.
 >
 > Known limitation: a holder that is alive but cannot reach the database for more than three lease
