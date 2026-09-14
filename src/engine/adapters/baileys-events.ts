@@ -33,6 +33,7 @@ import {
   isMediaDownloadEnabled,
   withInboundDownloadTimeout,
 } from './inbound-media-cap';
+import type { Dispatcher } from 'undici';
 import type { ConcurrencyLimiter } from '../../common/utils/concurrency-limiter';
 import { type createLogger } from '../../common/services/logger.service';
 import { createSilentLogger } from './baileys-logger';
@@ -98,6 +99,8 @@ export interface BaileysEventsHost {
   normalizedSelfJid(): string;
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first connect, not at boot). */
   loadLib(): Promise<typeof BaileysLib>;
+  /** Session proxy dispatcher for the media download: undefined = direct, null = proxy fetch cannot use. */
+  getFetchDispatcher(): Dispatcher | null | undefined;
   /** Unix-seconds timestamp of the last 'open' connection.update — the live-vs-history discriminator. */
   readonly connectedAt: number;
   /** The adapter's inbound media download gate (shared so the bound holds across all inbound paths). */
@@ -745,6 +748,13 @@ export class BaileysEvents {
     msg: WAMessage,
     maxBytes: number,
   ): Promise<Buffer | { overflowBytes: number } | null> {
+    // A proxied session must not fetch media around its proxy (#859). Baileys reads the dispatcher
+    // from the nested `options` (a top-level one is ignored); a proxy scheme fetch cannot use fails
+    // the download, which the caller turns into the omitted marker.
+    const dispatcher = this.host.getFetchDispatcher();
+    if (dispatcher === null) {
+      throw new Error('Media download is not supported through this proxy scheme');
+    }
     // Hold the stream handle in the outer scope so the timeout can destroy it. A genuine
     // download/read error still rejects (propagating to the caller's catch as before).
     let stream: (AsyncIterable<Buffer> & { destroy?: () => void }) | undefined;
@@ -753,7 +763,7 @@ export class BaileysEvents {
       stream = (await b.downloadMediaMessage(
         msg,
         'stream',
-        {},
+        dispatcher ? { options: { dispatcher } as RequestInit } : {},
         {
           logger: createSilentLogger(),
           reuploadRequest: this.host.getSocket().updateMediaMessage,

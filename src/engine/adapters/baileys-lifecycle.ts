@@ -5,6 +5,7 @@ import type { Agent } from 'https';
 import * as qrcode from 'qrcode';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
+import { Dispatcher1Wrapper, ProxyAgent, type Dispatcher } from 'undici';
 import type * as BaileysLib from '@whiskeysockets/baileys';
 import type { WASocket } from '@whiskeysockets/baileys';
 import type { ILogger } from '@whiskeysockets/baileys/lib/Utils/logger.js';
@@ -50,8 +51,9 @@ const BAILEYS_LOGOUT_ACK_TIMEOUT_MS = 8_000;
 const BAILEYS_WS_CONNECTING_DEADLINE_MS = 60_000;
 
 /**
- * Build the Node-layer agent for a session egress proxy (#859). Both the WhatsApp WebSocket
- * (`agent`) and media up/downloads (`fetchAgent`) ride it; credentials stay in the URL and are
+ * Build the Node-layer agent for a session egress proxy (#859). The WhatsApp WebSocket (`agent`) and
+ * media uploads (`fetchAgent`) ride it; downloads and the version lookup go through global fetch,
+ * which needs {@link createProxyDispatcher} instead. Credentials stay in the URL and are
  * authenticated on the socket itself, so none of the Chromium CDP auth timing the wwjs engine is
  * exposed to applies here. The scheme set matches the create-session DTO validator; anything else
  * (a pre-validation DB row) throws, failing the session closed rather than silently going direct.
@@ -63,6 +65,35 @@ export function createProxyAgent(proxyUrl: string): Agent {
   }
   if (protocol === 'socks4:' || protocol === 'socks5:') {
     return new SocksProxyAgent(proxyUrl);
+  }
+  throw new Error(`Unsupported proxy protocol for the baileys engine: ${protocol}`);
+}
+
+/**
+ * Build the global-fetch dispatcher for a session egress proxy, used by Baileys' media download and
+ * version lookup. Global fetch accepts only an undici dispatcher, never a Node http Agent, and Node's
+ * bundled undici predates the handler API of the installed one, so the agent is wrapped to speak the
+ * older interface. undici has no SOCKS4 transport: null tells the caller to skip the request rather
+ * than send it direct.
+ */
+export function createProxyDispatcher(proxyUrl: string): Dispatcher | null {
+  const { protocol, username, password } = new URL(proxyUrl);
+  if (protocol === 'http:' || protocol === 'https:') {
+    return new Dispatcher1Wrapper(new ProxyAgent(proxyUrl));
+  }
+  if (protocol === 'socks5:') {
+    // undici hands SOCKS5 the URL credentials still percent-encoded (it decodes them only for the HTTP
+    // Proxy-Authorization header), so a password written as `p%40ss` would fail auth. Pass them decoded;
+    // the options object is not a literal because undici's typings omit these two runtime options.
+    const options = {
+      uri: proxyUrl,
+      username: decodeURIComponent(username) || undefined,
+      password: decodeURIComponent(password) || undefined,
+    };
+    return new Dispatcher1Wrapper(new ProxyAgent(options));
+  }
+  if (protocol === 'socks4:') {
+    return null;
   }
   throw new Error(`Unsupported proxy protocol for the baileys engine: ${protocol}`);
 }
@@ -149,6 +180,8 @@ export class BaileysLifecycle {
   private lastConnectionCloseAt = 0;
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first connect, not at boot). */
   private lib?: typeof BaileysLib;
+  /** The session proxy's fetch dispatcher, built once: the proxy URL is fixed for the adapter's life. */
+  private dispatcher?: Dispatcher | null;
 
   constructor(private readonly host: BaileysLifecycleHost) {
     this.versionResolver = new BaileysVersionResolver({
@@ -161,6 +194,21 @@ export class BaileysLifecycle {
   /** Lazily loaded @whiskeysockets/baileys module (ESM-only; loaded on first connect, not at boot). */
   async loadLib(): Promise<typeof BaileysLib> {
     return (this.lib ??= await import('@whiskeysockets/baileys'));
+  }
+
+  /**
+   * Dispatcher for Baileys' global-fetch calls: undefined without a proxy (direct), null when the
+   * proxy scheme has no fetch transport, so the caller must skip the request instead of going direct.
+   */
+  fetchDispatcher(): Dispatcher | null | undefined {
+    const { proxyUrl } = this.host.config;
+    if (!proxyUrl) {
+      return undefined;
+    }
+    if (this.dispatcher === undefined) {
+      this.dispatcher = createProxyDispatcher(proxyUrl);
+    }
+    return this.dispatcher;
   }
 
   async initialize(): Promise<void> {
@@ -217,7 +265,7 @@ export class BaileysLifecycle {
     }
     const b = await this.loadLib();
     const { state, saveCreds } = await b.useMultiFileAuthState(this.host.authPath);
-    const version = await this.versionResolver.resolve(b, { dispatcher: proxyAgent });
+    const version = await this.versionResolver.resolve(b, { dispatcher: this.fetchDispatcher() });
     // BaileysLogger matches ILogger exactly; cast needed because the module resolves the type
     // through a deep import path that TypeScript does not auto-unify here. Shared by the key
     // store wrapper below and the socket itself, rather than constructing two instances.
@@ -275,7 +323,8 @@ export class BaileysLifecycle {
       version,
       browser: BAILEYS_BROWSER,
       printQRInTerminal: false,
-      // Session egress proxy (#859): the WS and media transfers share one agent; undefined = direct.
+      // Session egress proxy (#859): the WS and media uploads share one agent; undefined = direct.
+      // Media downloads use fetchDispatcher() instead, since Baileys fetches them with global fetch.
       agent: proxyAgent,
       fetchAgent: proxyAgent,
       // Enable the initial sync. Baileys defaults `shouldSyncHistoryMessage` to `() => !!syncFullHistory`,

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Baileys sessions with an HTTP, HTTPS or SOCKS5 proxy download inbound media through the proxy instead of connecting direct, and look up the WhatsApp Web version through it instead of always falling back; with a SOCKS4 proxy both are skipped, and inbound media arrives as the omitted marker.
+
 ### Added
 
 - `GET /api/sessions` accepts a `name` query parameter that returns only the session with that exact name, also on the MCP `SessionFindAll` tool and the JavaScript, Python, Go, Java and PHP SDKs ([#1594](https://github.com/rmyndharis/OpenWA/issues/1594)). Thanks @rivenash.

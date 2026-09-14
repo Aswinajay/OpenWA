@@ -24,13 +24,14 @@ function imageMessage(id: string, fileLength: number): WAMessage {
   };
 }
 
-function build(): { events: BaileysEvents; warns: string[] } {
+function build(dispatcher?: object | null): { events: BaileysEvents; warns: string[] } {
   const warns: string[] = [];
   const events = new BaileysEvents({
     getSocket: () => ({ updateMediaMessage: jest.fn() }) as unknown as WASocket,
     getSocketOrNull: () => null,
     logger: { ...createLogger('BaileysMediaAbortSpec'), warn: (m: string) => warns.push(m) },
     loadLib: () => Promise.resolve({ normalizeMessageContent: (c: unknown) => c, downloadMediaMessage }),
+    getFetchDispatcher: () => dispatcher,
     toNeutralJid: (jid: string) => jid,
     normalizedSelfJid: () => '6280000000000@s.whatsapp.net',
     connectedAt: 0,
@@ -119,5 +120,47 @@ describe('BaileysEvents aborted media download size', () => {
     expect(stream.destroy).toHaveBeenCalled();
     expect(warns).toEqual([expect.stringContaining('MEDIA_DOWNLOAD_TIMEOUT_MS')]);
     expect(warns[0]).not.toContain('MEDIA_DOWNLOAD_MAX_BYTES');
+  });
+});
+
+describe('BaileysEvents media download through a session proxy', () => {
+  beforeEach(() => {
+    downloadMediaMessage.mockReset();
+    process.env.MEDIA_DOWNLOAD_ENABLED = 'true';
+  });
+
+  afterEach(() => {
+    delete process.env.MEDIA_DOWNLOAD_ENABLED;
+  });
+
+  it('hands the proxy dispatcher to Baileys in the nested fetch options', async () => {
+    const dispatcher = { dispatch: jest.fn() };
+    downloadMediaMessage.mockResolvedValue({
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from('IMG');
+      },
+    });
+    const { events } = build(dispatcher);
+
+    await events.mapMessage(imageMessage('PROXIED', 3), 'imageMessage');
+
+    // Baileys reads `options.options.dispatcher`; a top-level `dispatcher` would be ignored.
+    expect(downloadMediaMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      'stream',
+      { options: { dispatcher } },
+      expect.anything(),
+    );
+  });
+
+  it('never downloads direct when the proxy scheme has no fetch dispatcher', async () => {
+    const { events, warns } = build(null);
+
+    const incoming = await events.mapMessage(imageMessage('SOCKS4', 3), 'imageMessage');
+
+    expect(downloadMediaMessage).not.toHaveBeenCalled();
+    expect(incoming.media).toEqual({ mimetype: 'image/png', filename: undefined, omitted: true, sizeBytes: 3 });
+    expect(warns).toEqual([expect.stringContaining('download failed')]);
   });
 });
