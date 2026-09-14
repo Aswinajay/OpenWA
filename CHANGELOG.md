@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Branch Docker images (`:main`, sha tags) rebuild the production apt layer, so they cannot serve stale OS packages from the build cache.
 - The Docker image upgrades the Debian packages inherited from the digest-pinned `node:22-slim` base at build time, so security fixes published after the base snapshot reach them; this clears CVE-2026-86145 and CVE-2026-89161 in `libpcre2-8-0`.
 - The Message Tester's bulk-recipients file picker refuses files over 2 MB before reading them.
+- `restore.sh` refuses to overwrite a live database without `--force` even when the operator's sqlite3 rc file changes its output format.
 - A misspelled `LOG_LEVEL` fails the boot naming the accepted values, instead of silently logging at info.
 - Dependabot can open better-sqlite3 13.x patch and minor updates again; the freeze now starts at v14.
 
