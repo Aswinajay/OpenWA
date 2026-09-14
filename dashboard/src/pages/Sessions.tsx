@@ -107,6 +107,9 @@ export function Sessions() {
       if (!initialLoadDone.current) setLoading(true);
       const data = await sessionApi.list();
       setSessions(data);
+      // The list is current again, so an error left by an earlier failed read (or a create, whose toast
+      // already reported it) no longer describes the page.
+      setError(null);
       // Keep the shared React Query cache (read by the Dashboard via useSessionsQuery /
       // useSessionStatsQuery) in sync after this page's mutations reload local state — otherwise the
       // Dashboard shows stale session counts/status. This runs on every reload (mount / WS-failed /
