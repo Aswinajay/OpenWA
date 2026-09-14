@@ -201,10 +201,11 @@ List all sessions, scoped to the API key's `allowedSessions`, ordered `createdAt
 
 **Query parameters**
 
-| Name     | Type             | Required | Default | Description                                                                                     |
-| -------- | ---------------- | -------- | ------- | ----------------------------------------------------------------------------------------------- |
-| `limit`  | integer (1-1000) | No       | `1000`  | Max sessions to return; oversized/non-finite values are clamped/fallback to the default window. |
-| `offset` | integer          | No       | `0`     | Sessions to skip for paging; negative/non-finite values resolve to `0`.                         |
+| Name     | Type             | Required | Default | Description                                                                                                                                                                                             |
+| -------- | ---------------- | -------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit`  | integer (1-1000) | No       | `1000`  | Max sessions to return; oversized/non-finite values are clamped/fallback to the default window.                                                                                                         |
+| `offset` | integer          | No       | `0`     | Sessions to skip for paging; negative/non-finite values resolve to `0`.                                                                                                                                 |
+| `name`   | string           | No       |         | Return only the session with exactly this name (case-sensitive). No match, including a name outside a scoped key's `allowedSessions`, returns `200 []`. An empty value or a repeated key returns `400`. |
 
 **Response** `200`
 
@@ -241,7 +242,7 @@ List all sessions, scoped to the API key's `allowedSessions`, ordered `createdAt
 
 `engineLoaded` reports whether the gateway holds a live engine for the session at the moment of the response. It is the precondition the lifecycle routes enforce, and **`status` is not a substitute for it**: `disconnected` covers both a session whose engine is still registered while an automatic reconnect backs off — where `POST /start` answers `400` — and one stopped through `POST /stop`, which has no engine and does need a start. When `engineLoaded` is `true`, `stop`, `logout` and `force-kill` can act; when it is `false`, `start` is the applicable route. The field is derived per request from live process state, so it is never persisted and never appears in historical/exported data.
 
-**Errors:** `401` missing/invalid `X-API-Key`
+**Errors:** `400` empty or repeated `name` · `401` missing/invalid `X-API-Key`
 
 #### GET /api/sessions/:sessionId
 

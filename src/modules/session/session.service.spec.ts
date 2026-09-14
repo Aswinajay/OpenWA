@@ -782,6 +782,51 @@ describe('SessionService', () => {
         skip: 0,
       });
     });
+
+    it('filters by exact name for an unrestricted key', async () => {
+      (repository.find as jest.Mock).mockResolvedValue([]);
+
+      await service.findAll(null, { name: 'My-Bot' });
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: { name: 'My-Bot' },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 1000,
+        skip: 0,
+      });
+    });
+
+    it('ANDs the name filter with the key allowlist in one where clause', async () => {
+      (repository.find as jest.Mock).mockResolvedValue([]);
+
+      await service.findAll(['sess-1'], { name: 'other-bot', limit: 10, offset: 5 });
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: { id: In(['sess-1']), name: 'other-bot' },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 10,
+        skip: 5,
+      });
+    });
+
+    it('never passes an empty or non-string name to the query', async () => {
+      (repository.find as jest.Mock).mockResolvedValue([]);
+
+      await service.findAll(null, { name: '' });
+      await service.findAll(['sess-1'], { name: ['a', 'b'] as unknown as string });
+
+      expect(repository.find).toHaveBeenNthCalledWith(1, {
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 1000,
+        skip: 0,
+      });
+      expect(repository.find).toHaveBeenNthCalledWith(2, {
+        where: { id: In(['sess-1']) },
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 1000,
+        skip: 0,
+      });
+    });
   });
 
   describe('findOne', () => {
