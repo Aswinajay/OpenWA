@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
+- `GET /api/infra/storage/export` streams files into the archive one at a time instead of loading the whole media store into memory first, so exporting a large local or S3 store no longer exhausts memory.
 
 ## [0.23.5] - 2026-09-14
 
