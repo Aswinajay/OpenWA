@@ -2712,6 +2712,30 @@ describe('SessionService', () => {
       expect(loopDispatches()).toHaveLength(1);
     });
 
+    // A QR is WhatsApp answering, so the outage is over. Left in place, the old text would come back
+    // at every INITIALIZING gap between QR windows of a session that is only waiting to be paired.
+    it('clears the reconnect lastError once a QR arrives', async () => {
+      const callbacks = await startAndCapture();
+
+      for (let attempt = 1; attempt <= 5; attempt++) callbacks.onReconnecting?.(attempt, 60_000);
+      callbacks.onQRCode?.('qr-data');
+
+      (repository.findOne as jest.Mock).mockResolvedValue(createMockSession({ status: SessionStatus.INITIALIZING }));
+      const result = await service.findOne('sess-uuid-1');
+
+      expect(result.lastError).toBeUndefined();
+    });
+
+    it('a QR leaves any other lastError alone', async () => {
+      const callbacks = await startAndCapture();
+      const sessionErrors = (service as unknown as { sessionErrors: SessionErrorStore }).sessionErrors;
+
+      callbacks.onActionRequired?.('Dismiss the onboarding dialog on the phone');
+      callbacks.onQRCode?.('qr-data');
+
+      expect(sessionErrors.get('sess-uuid-1')).toBe('Dismiss the onboarding dialog on the phone');
+    });
+
     it('never fires onDisconnected: the session is still linked and the engine owns the retry', async () => {
       const callbacks = await startAndCapture();
       (repository.update as jest.Mock).mockClear();
