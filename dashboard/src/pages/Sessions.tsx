@@ -529,7 +529,7 @@ export function Sessions() {
         <div className="error-banner" role="alert">
           <AlertCircle size={20} />
           <span className="error-banner-text">{t('sessions.feedDisconnected')}</span>
-          <button className="btn-secondary" style={{ marginLeft: 'auto' }} onClick={reconnect}>
+          <button className="btn-secondary" style={{ marginInlineStart: 'auto' }} onClick={reconnect}>
             {t('common.refresh')}
           </button>
         </div>
