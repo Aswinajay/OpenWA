@@ -22,12 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The Baileys live path drops a message made only of sender-key distributions or message-history notices instead of delivering it as a bodyless `unknown` `message.received`; other messages it cannot type still arrive as `unknown` ([#1568](https://github.com/rmyndharis/OpenWA/issues/1568)). Thanks @berodcdev for the report.
-- A Baileys reconnect loop is observable for a linked session, not while waiting for a QR scan: `lastError` on the session, a `session.reconnect_loop` webhook every fifth attempt, and reconnect metrics; a connection attempt refused at the WebSocket upgrade is closed and retried instead of leaving the session at `initializing` ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
+- A Baileys reconnect loop is observable through `lastError` on the session, a `session.reconnect_loop` webhook every fifth attempt and reconnect metrics; a QR left unscanned is not reported as one ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
+- A Baileys connection attempt refused at the WebSocket upgrade is closed and retried instead of leaving the session at `initializing` ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
 - The dashboard session card keeps the phone number, session id and last-active time while a linked session reconnects, instead of the pairing placeholder ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
 - The Sessions page reports a dead live-event feed. When the feed recovers from a gap, the Sessions page re-reads its list and the Chats page refetches the open thread and contact statuses; a feed that never connected counts as a gap only once it has failed and shown the reconnect banner.
 - A Baileys media download aborted at `MEDIA_DOWNLOAD_MAX_BYTES` reports the bytes received as `sizeBytes`, and a timed-out one its declared size, instead of the cap.
 - The webhook docs state that at the default limits media above about 768 KiB reaches webhooks as the omitted marker, and how to raise both limits ([#1569](https://github.com/rmyndharis/OpenWA/issues/1569)). Thanks @Magnarks for the report.
-- The takeover sweep marks sessions left `ready`, `initializing`, `authenticating` or `action_required` by a node that never returned disconnected, regardless of `AUTO_START_SESSIONS`; `qr_ready` sessions keep their status.
+- The takeover sweep marks as disconnected any session left `ready`, `initializing`, `authenticating` or `action_required` by a node that never returned, regardless of `AUTO_START_SESSIONS`.
+- The takeover sweep also marks a lapsed `qr_ready` session with no phone as disconnected; one with a phone keeps its status.
+- Reconnect on a dashboard session card that reads `initializing` or `qr_ready` with no engine loaded starts the session, instead of opening a QR modal that never receives a code.
 - Branch Docker images (`:main`, sha tags) rebuild the production stage without the build cache, so they cannot serve stale OS packages.
 - The Docker image upgrades the Debian packages inherited from the digest-pinned `node:22-slim` base at build time, so security fixes published after the base snapshot reach them; this clears CVE-2026-86145 and CVE-2026-89161 in `libpcre2-8-0`.
 - The Message Tester's bulk-recipients file picker refuses files over 2 MB before reading them.

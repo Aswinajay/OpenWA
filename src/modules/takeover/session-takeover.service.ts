@@ -15,9 +15,10 @@ import { BulkMessageService } from '../message/bulk-message.service';
  * restarting it elsewhere just renders a QR nobody asked for. FAILED is deliberately absent too:
  * it marks a session an operator must look at, and silently relocating it would hide that.
  *
- * DISCONNECTED is present, so the status correction must never write it over a status this set
- * leaves out: markLapsedDisconnected corrects only READY, INITIALIZING, AUTHENTICATING and
- * ACTION_REQUIRED, which are adopted either way, and leaves a lapsed QR_READY row as it is.
+ * DISCONNECTED is present, so the status correction must never write it over a row this sweep would
+ * otherwise leave alone: markLapsedDisconnected corrects READY, INITIALIZING, AUTHENTICATING and
+ * ACTION_REQUIRED, which are adopted either way, and QR_READY only on a row with no phone, which
+ * isEligible refuses either way.
  */
 const TAKEOVER_STATUSES = new Set<SessionStatus>([
   SessionStatus.READY,
