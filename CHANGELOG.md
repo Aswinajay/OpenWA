@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Italian (`it`) dashboard translates the session proxy Save button, the webhook chat-kind filter label and the warning shown when a backup export leaves out media ([#1583](https://github.com/rmyndharis/OpenWA/pull/1583)). Thanks @albanobattistella.
 
+### Fixed
+
+- A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
+- A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
+
 ## [0.23.5] - 2026-09-14
 
 ### Security
