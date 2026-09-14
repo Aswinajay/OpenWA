@@ -960,6 +960,25 @@ export interface WebhookTestResult {
   error?: string;
 }
 
+/** A webhook delivery abandoned after every retry, as listed by the delivery-failure log. */
+export interface WebhookDeliveryFailure {
+  id: string;
+  webhookId: string;
+  sessionId: string;
+  event: string;
+  url: string;
+  /** The idempotency key the receiver would have deduped on. */
+  idempotencyKey?: string | null;
+  deliveryId?: string | null;
+  /** Total attempts made before giving up. */
+  attempts: number;
+  /** Last HTTP status when the failure was a non-2xx response; null for a network or timeout error. */
+  lastStatusCode?: number | null;
+  lastError: string;
+  /** ISO timestamp of when the delivery was finally abandoned. */
+  createdAt: string;
+}
+
 // ── Chat (session-scoped chat operations) ─────────────────────────
 
 export interface ChatSummary {

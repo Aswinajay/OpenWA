@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The Italian (`it`) dashboard translates the session proxy Save button, the webhook chat-kind filter label and the warning shown when a backup export leaves out media ([#1583](https://github.com/rmyndharis/OpenWA/pull/1583)). Thanks @albanobattistella.
+- `webhooks.deliveryFailures` returns a typed `WebhookDeliveryFailure` list in the JavaScript, Python, Go and Java SDKs; Go and Java callers that handled the old untyped value must update.
 
 ### Fixed
 
