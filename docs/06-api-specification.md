@@ -6908,6 +6908,7 @@ Every delivery includes:
 - `session.status`: `sess_{sessionId}_{status}_{occurredAt}`
 - `session.authenticated`: `auth_{sessionId}_{hash(data)}_{occurredAt}`
 - `session.disconnected`: `disc_{sessionId}_{hash(reason)}_{occurredAt}`
+- `session.reconnect_loop`: `loop_{sessionId}_{attempts}_{occurredAt}`
 - `group.join` / `group.leave`: `grp_{groupId}_{hash(participantIds)}_{join|leave}_{occurredAt}`
 - `group.update`: `grp_{groupId}_update_{hash(changes)}_{occurredAt}`
 - `group.join_request`: `grp_{groupId}_{hash(participantIds)}_join_request_{occurredAt}` (salted like `group.join` — a rejected user can legitimately ask again)
