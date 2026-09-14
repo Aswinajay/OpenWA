@@ -758,6 +758,9 @@ export class BaileysEvents {
     // Hold the stream handle in the outer scope so the timeout can destroy it. A genuine
     // download/read error still rejects (propagating to the caller's catch as before).
     let stream: (AsyncIterable<Buffer> & { destroy?: () => void }) | undefined;
+    // The timeout can fire before the stream exists (an expired-media re-upload wait, a slow response):
+    // the abandoned download must then stop on its own instead of buffering outside the limiter.
+    let timedOut = false;
     const download = (async (): Promise<Buffer | { overflowBytes: number }> => {
       const b = await this.host.loadLib();
       stream = (await b.downloadMediaMessage(
@@ -769,10 +772,17 @@ export class BaileysEvents {
           reuploadRequest: this.host.getSocket().updateMediaMessage,
         },
       )) as AsyncIterable<Buffer> & { destroy?: () => void };
+      if (timedOut) {
+        stream.destroy?.();
+        return Buffer.alloc(0);
+      }
 
       const chunks: Buffer[] = [];
       let total = 0;
       for await (const chunk of stream) {
+        if (timedOut) {
+          break;
+        }
         total += chunk.length;
         if (total > maxBytes) {
           stream.destroy?.();
@@ -786,7 +796,10 @@ export class BaileysEvents {
     // A slow/trickling sender never trips the byte cap, so without a deadline it pins a concurrency
     // slot (and, on Baileys, the whole inbound handler) indefinitely. On timeout, destroy the stream
     // and treat it as no usable media.
-    return withInboundDownloadTimeout(download, inboundMediaTimeoutMs(), () => stream?.destroy?.());
+    return withInboundDownloadTimeout(download, inboundMediaTimeoutMs(), () => {
+      timedOut = true;
+      stream?.destroy?.();
+    });
   }
 
   /**

@@ -121,6 +121,31 @@ describe('BaileysEvents aborted media download size', () => {
     expect(warns).toEqual([expect.stringContaining('MEDIA_DOWNLOAD_TIMEOUT_MS')]);
     expect(warns[0]).not.toContain('MEDIA_DOWNLOAD_MAX_BYTES');
   });
+
+  it('stops a download whose stream only arrives after MEDIA_DOWNLOAD_TIMEOUT_MS', async () => {
+    jest.useFakeTimers();
+    process.env.MEDIA_DOWNLOAD_TIMEOUT_MS = '50';
+    const read = jest.fn();
+    const stream: Stream = {
+      // eslint-disable-next-line @typescript-eslint/require-await
+      async *[Symbol.asyncIterator]() {
+        read();
+        yield Buffer.alloc(16);
+      },
+      destroy: jest.fn(),
+    };
+    // Resolves after the deadline, as an expired-media re-upload wait does.
+    downloadMediaMessage.mockImplementation(() => new Promise(resolve => setTimeout(() => resolve(stream), 200)));
+    const { events } = build();
+
+    const pending = events.mapMessage(imageMessage('REUPLOAD', 4096), 'imageMessage');
+    await jest.advanceTimersByTimeAsync(50);
+    expect((await pending).media).toMatchObject({ omitted: true, sizeBytes: 4096 });
+
+    await jest.advanceTimersByTimeAsync(200);
+    expect(stream.destroy).toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+  });
 });
 
 describe('BaileysEvents media download through a session proxy', () => {

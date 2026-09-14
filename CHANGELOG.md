@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
 - A Baileys session behind an HTTP(S) proxy that never answers CONNECT no longer leaves an open connection to the proxy on every reconnect attempt.
+- A Baileys inbound media download that passes `MEDIA_DOWNLOAD_TIMEOUT_MS` before its stream opens stops instead of buffering in the background outside `INBOUND_MEDIA_CONCURRENCY`.
 
 ## [0.23.5] - 2026-09-14
 
