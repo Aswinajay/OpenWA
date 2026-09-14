@@ -543,6 +543,29 @@ test('Refresh on a feed that never connected re-reads the list once the socket i
   assert.equal(screen.queryByRole('alert') === null, true, 'the feed banner is still shown');
 });
 
+test('a failed mount read is retried when the feed first connects after its own retries', async () => {
+  const { screen, waitFor, act } = rtl;
+  resetFetchCalls();
+  sessionListFailures = 1;
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  holdConnect();
+  renderSessions();
+
+  await screen.findByText('gateway unavailable');
+  const listReads = (): number => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+  assert.equal(listReads(), 1);
+
+  // socket.io's manager retried the handshake on its own and it went through: this is the socket's
+  // FIRST connect, so the feed reports no reconnect and nothing else re-reads the list.
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  act(() => socket.receive('connect'));
+
+  await waitFor(() => assert.equal(listReads(), 2));
+  await screen.findByText('new-device');
+  assert.equal(screen.queryByText('gateway unavailable') === null, true, 'the failed read error is still shown');
+});
+
 // ── Auto-reject toggle ───────────────────────────────────────────────────────
 
 async function openDetailFor(name: string): Promise<HTMLInputElement> {
