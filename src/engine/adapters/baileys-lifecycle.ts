@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import type { ClientRequest, IncomingMessage } from 'http';
 import type { Agent } from 'https';
+import type { Socket } from 'net';
 import * as qrcode from 'qrcode';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { SocksProxyAgent } from 'socks-proxy-agent';
@@ -50,6 +51,45 @@ const BAILEYS_LOGOUT_ACK_TIMEOUT_MS = 8_000;
  */
 const BAILEYS_WS_CONNECTING_DEADLINE_MS = 60_000;
 
+/** Bound on an HTTP(S) proxy's CONNECT reply, matching Baileys' default connectTimeoutMs. */
+const PROXY_CONNECT_TIMEOUT_MS = 20_000;
+
+/**
+ * HttpsProxyAgent whose proxy socket cannot outlive the request that asked for it. The library awaits
+ * the CONNECT reply with no abort hook or timeout, so a proxy that accepts TCP and never answers kept
+ * its socket open after ws abandoned the handshake: one more open connection per reconnect attempt.
+ * The socket is destroyed when the request is aborted (what ws does) or when the reply is overdue (a
+ * request destroyed before it has a socket emits nothing). The signal has to be in connectOpts while
+ * super.connect() runs synchronously, which is where the socket is opened; it is restored right after
+ * so concurrent requests on the agent keep their own.
+ */
+class AbortableHttpsProxyAgent extends HttpsProxyAgent<string> {
+  constructor(
+    proxyUrl: string,
+    private readonly connectTimeoutMs: number,
+  ) {
+    super(proxyUrl);
+  }
+
+  override async connect(req: ClientRequest, opts: Parameters<HttpsProxyAgent<string>['connect']>[1]): Promise<Socket> {
+    const controller = new AbortController();
+    const abort = (): void => controller.abort();
+    req.once('abort', abort);
+    const timer = setTimeout(abort, this.connectTimeoutMs);
+    timer.unref();
+    const connectOpts = this.connectOpts;
+    this.connectOpts = { ...connectOpts, signal: controller.signal };
+    const pending = super.connect(req, opts);
+    this.connectOpts = connectOpts;
+    try {
+      return await pending;
+    } finally {
+      clearTimeout(timer);
+      req.off('abort', abort);
+    }
+  }
+}
+
 /**
  * Build the Node-layer agent for a session egress proxy (#859). The WhatsApp WebSocket (`agent`) and
  * media uploads (`fetchAgent`) ride it; downloads and the version lookup go through global fetch,
@@ -58,10 +98,10 @@ const BAILEYS_WS_CONNECTING_DEADLINE_MS = 60_000;
  * exposed to applies here. The scheme set matches the create-session DTO validator; anything else
  * (a pre-validation DB row) throws, failing the session closed rather than silently going direct.
  */
-export function createProxyAgent(proxyUrl: string): Agent {
+export function createProxyAgent(proxyUrl: string, connectTimeoutMs = PROXY_CONNECT_TIMEOUT_MS): Agent {
   const { protocol } = new URL(proxyUrl);
   if (protocol === 'http:' || protocol === 'https:') {
-    return new HttpsProxyAgent(proxyUrl);
+    return new AbortableHttpsProxyAgent(proxyUrl, connectTimeoutMs);
   }
   if (protocol === 'socks4:' || protocol === 'socks5:') {
     return new SocksProxyAgent(proxyUrl);
