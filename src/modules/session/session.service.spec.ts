@@ -17,7 +17,15 @@ import { EngineTransportError } from '../../common/errors/engine-transport.error
 import { ConfigService } from '@nestjs/config';
 import { SessionService, AUTOSTART_THROTTLE_MS } from './session.service';
 import { ACK_RECONCILE_DELAY_MS } from './message-projector.service';
-import { SessionEngineLifecycle } from './session-engine-lifecycle.service';
+import { SessionEngineLifecycle, type ReconnectState } from './session-engine-lifecycle.service';
+import {
+  ACCOUNT_REJECTED_REASON,
+  AUTH_FAILURE_REASON,
+  CONNECTION_REPLACED_REASON,
+  LOGOUT_CLEANUP_FAILED_REASON,
+  STALE_PROFILE_ADVICE,
+  isKnownTerminalEngineFailure,
+} from '../../engine/terminal-engine-failure';
 import { Session, SessionStatus } from './entities/session.entity';
 import { Message, MessageDirection, MessageStatus } from '../message/entities/message.entity';
 import { MessageBatch } from '../message/entities/message-batch.entity';
@@ -1418,6 +1426,8 @@ describe('SessionService', () => {
         .spyOn(lifecycle as unknown as { scheduleReconnect: () => void }, 'scheduleReconnect')
         .mockImplementation(() => undefined);
       const state = { attempts: 1, timer: null, maxAttempts: 5, baseDelay: 5000 };
+      // The attempt's own state, as scheduleReconnect leaves it: a replaced state is not this attempt's to evict.
+      (lifecycle as unknown as { reconnectStates: Map<string, unknown> }).reconnectStates.set('sess-uuid-1', state);
 
       await intern().executeReconnect('sess-uuid-1', createMockSession(), state);
       await flush();
@@ -2021,6 +2031,295 @@ describe('SessionService', () => {
         jest.clearAllTimers();
         jest.useRealTimers();
       }
+    });
+  });
+
+  describe('reconnect re-init failure', () => {
+    const ID = 'sess-uuid-1';
+    interface Internals {
+      executeReconnect: (id: string, session: Session, state: ReconnectState) => Promise<void>;
+      reconnectStates: Map<string, ReconnectState>;
+      stoppingSessions: Set<string>;
+      engines: EngineRegistry;
+      sessionErrors: SessionErrorStore;
+    }
+    const internals = (): Internals => lifecycle as unknown as Internals;
+    const flush = () => new Promise(resolve => setImmediate(resolve));
+
+    // Registered exactly as scheduleReconnect leaves it just before its timer fires executeReconnect.
+    const armState = (overrides: Partial<ReconnectState> = {}): ReconnectState => {
+      const state: ReconnectState = { attempts: 1, timer: null, maxAttempts: 5, baseDelay: 5000, ...overrides };
+      internals().reconnectStates.set(ID, state);
+      return state;
+    };
+
+    // The adapter shape on a failed initialize(): FAILED, then onError, then the rejection.
+    const reportFailure = (cb: EngineEventCallbacks, reason: string): void => {
+      cb.onStateChanged?.(EngineStatus.FAILED);
+      cb.onError?.(reason);
+    };
+    const failingInit = (reason: string) => (cb: EngineEventCallbacks) => {
+      reportFailure(cb, reason);
+      return Promise.reject(new Error(reason));
+    };
+    // An initialize() the test settles by hand, to land a stop/delete/start inside the init window.
+    const deferredInit = () => {
+      let callbacks: EngineEventCallbacks = {};
+      let reject: (err: Error) => void = () => undefined;
+      mockEngine.initialize.mockImplementationOnce((cb: EngineEventCallbacks) => {
+        callbacks = cb;
+        return new Promise<void>((_, rej) => (reject = rej));
+      });
+      return {
+        fail: (reason: string) => {
+          reportFailure(callbacks, reason);
+          reject(new Error(reason));
+        },
+      };
+    };
+
+    const failedWrites = () =>
+      (repository.update as jest.Mock).mock.calls.filter(
+        ([, patch]) => (patch as { status?: SessionStatus }).status === SessionStatus.FAILED,
+      ).length;
+    const errorHooks = () =>
+      (hookManager.execute as jest.Mock).mock.calls.filter(([n]) => n === 'session:error').length;
+
+    beforeEach(() => {
+      (repository.findOne as jest.Mock).mockResolvedValue(createMockSession());
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+      (repository.remove as jest.Mock).mockResolvedValue(createMockSession());
+    });
+
+    afterEach(() => {
+      for (const state of internals().reconnectStates.values()) if (state.timer) clearTimeout(state.timer);
+    });
+
+    it('retries a network rejection: same state re-armed, no FAILED, no session:error, engine evicted once', async () => {
+      const i = internals();
+      mockEngine.initialize.mockImplementationOnce(failingInit('net::ERR_NAME_NOT_RESOLVED'));
+      const state = armState();
+
+      await i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+
+      expect(i.reconnectStates.get(ID)).toBe(state);
+      expect(state.timer).not.toBeNull();
+      expect(state.attempts).toBe(2);
+      expect(failedWrites()).toBe(0);
+      expect(errorHooks()).toBe(0);
+      expect(mockEngine.forceDestroy).toHaveBeenCalledTimes(1);
+      expect(i.engines.has(ID)).toBe(false);
+      expect(i.sessionErrors.get(ID)).toBe('net::ERR_NAME_NOT_RESOLVED');
+
+      // The next attempt succeeds, and READY resets the streak.
+      clearTimeout(state.timer!);
+      let callbacks: EngineEventCallbacks = {};
+      mockEngine.initialize.mockImplementationOnce((cb: EngineEventCallbacks) => {
+        callbacks = cb;
+        return Promise.resolve();
+      });
+      await i.executeReconnect(ID, createMockSession(), state);
+      callbacks.onReady?.('628123', 'Tester');
+
+      expect(i.engines.get(ID)).toBe(mockEngine);
+      expect(state.attempts).toBe(0);
+      expect(failedWrites()).toBe(0);
+
+      // Init has settled, so a later failure on the READY session is applied, not parked.
+      callbacks.onStateChanged?.(EngineStatus.FAILED);
+      callbacks.onError?.(`${ACCOUNT_REJECTED_REASON}: blocked`);
+      await flush();
+
+      expect(failedWrites()).toBeGreaterThanOrEqual(1);
+      expect(errorHooks()).toBe(1);
+      expect(i.engines.has(ID)).toBe(false);
+    });
+
+    it('arms nothing when a delete completes while the attempt is in flight', async () => {
+      const i = internals();
+      const init = deferredInit();
+      const state = armState();
+
+      const run = i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+      await service.delete(ID);
+      init.fail('net::ERR_CONNECTION_RESET');
+      await run;
+      await flush();
+
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(state.timer).toBeNull();
+      expect(mockEngine.initialize).toHaveBeenCalledTimes(1);
+      expect(failedWrites()).toBe(0);
+    });
+
+    it('leaves a delete-then-start replacement untouched when the old attempt then fails', async () => {
+      const i = internals();
+      const init = deferredInit();
+      const replacement = {
+        ...mockEngine,
+        initialize: jest.fn().mockResolvedValue(undefined),
+        forceDestroy: jest.fn(),
+      };
+      const state = armState();
+
+      const run = i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+      await service.delete(ID);
+      (engineFactory.create as jest.Mock).mockReturnValueOnce(replacement);
+      await service.start(ID);
+      const fresh = i.reconnectStates.get(ID);
+      init.fail('net::ERR_CONNECTION_RESET');
+      await run;
+      await flush();
+
+      expect(i.engines.get(ID)).toBe(replacement);
+      expect(replacement.forceDestroy).not.toHaveBeenCalled();
+      expect(fresh).toBeDefined();
+      expect(i.reconnectStates.get(ID)).toBe(fresh);
+      expect(fresh!.timer).toBeNull();
+      expect(failedWrites()).toBe(0);
+    });
+
+    it('ends a stop during the attempt with no FAILED, no hook, no timer and no engine', async () => {
+      const i = internals();
+      const init = deferredInit();
+      const state = armState();
+
+      const run = i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+      await service.stop(ID);
+      init.fail('net::ERR_CONNECTION_RESET');
+      await run;
+      await flush();
+
+      expect(failedWrites()).toBe(0);
+      expect(errorHooks()).toBe(0);
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(state.timer).toBeNull();
+      expect(i.engines.has(ID)).toBe(false);
+    });
+
+    it('evicts and does not re-arm when a stop mark lands while the state is still current', async () => {
+      const i = internals();
+      mockEngine.initialize.mockImplementationOnce((cb: EngineEventCallbacks) => {
+        i.stoppingSessions.add(ID);
+        return failingInit('net::ERR_CONNECTION_RESET')(cb);
+      });
+      const state = armState();
+
+      await i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+
+      expect(i.engines.has(ID)).toBe(false);
+      expect(mockEngine.forceDestroy).toHaveBeenCalledTimes(1);
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(state.timer).toBeNull();
+      expect(failedWrites()).toBe(0);
+      expect(errorHooks()).toBe(0);
+    });
+
+    it('keeps a stale-profile rejection terminal: FAILED once, session:error once, no timer', async () => {
+      const i = internals();
+      const reason = `Execution context was destroyed. ${STALE_PROFILE_ADVICE}`;
+      mockEngine.initialize.mockImplementationOnce((cb: EngineEventCallbacks) => {
+        reportFailure(cb, reason);
+        return Promise.reject(new Error('Execution context was destroyed.'));
+      });
+      const state = armState();
+
+      await i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+
+      expect(failedWrites()).toBe(1);
+      expect(errorHooks()).toBe(1);
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(state.timer).toBeNull();
+      expect(i.engines.has(ID)).toBe(false);
+      expect(i.sessionErrors.get(ID)).toBe(reason);
+    });
+
+    it('keeps an auth failure rejection terminal: FAILED once, session:error once, no timer', async () => {
+      const i = internals();
+      mockEngine.initialize.mockImplementationOnce(failingInit(`${AUTH_FAILURE_REASON}: bad credentials`));
+      const state = armState();
+
+      await i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+
+      expect(failedWrites()).toBe(1);
+      expect(errorHooks()).toBe(1);
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(state.timer).toBeNull();
+      expect(i.engines.has(ID)).toBe(false);
+    });
+
+    it.each([
+      [`${AUTH_FAILURE_REASON}: bad credentials`, true],
+      [`${CONNECTION_REPLACED_REASON}. Stop the other instance.`, true],
+      [`${ACCOUNT_REJECTED_REASON}: blocked`, true],
+      [`${LOGOUT_CLEANUP_FAILED_REASON}: EACCES`, true],
+      [`Execution context was destroyed. ${STALE_PROFILE_ADVICE}`, true],
+      ['net::ERR_NAME_NOT_RESOLVED', false],
+    ])('classifies %s as terminal: %s', (reason, terminal) => {
+      expect(isKnownTerminalEngineFailure(reason)).toBe(terminal);
+    });
+
+    it('applies an auth failure reported while init resolves: FAILED once, session:error once', async () => {
+      const i = internals();
+      mockEngine.initialize.mockImplementationOnce((cb: EngineEventCallbacks) => {
+        reportFailure(cb, 'Authentication failed: bad credentials');
+        return Promise.resolve();
+      });
+      const state = armState();
+
+      await i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+
+      expect(failedWrites()).toBe(1);
+      expect(errorHooks()).toBe(1);
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(i.engines.has(ID)).toBe(false);
+      expect(mockEngine.forceDestroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('fires FAILED once and session:error once when a retryable failure exhausts the budget', async () => {
+      const i = internals();
+      mockEngine.initialize.mockImplementationOnce(failingInit('net::ERR_NAME_NOT_RESOLVED'));
+      const state = armState({ attempts: 5, maxAttempts: 5 });
+
+      await i.executeReconnect(ID, createMockSession(), state);
+      await flush();
+
+      expect(failedWrites()).toBe(1);
+      expect(errorHooks()).toBe(1);
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(i.engines.has(ID)).toBe(false);
+    });
+
+    it('keeps an init failure on the start() path terminal as before', async () => {
+      mockEngine.initialize.mockImplementationOnce(failingInit('net::ERR_NAME_NOT_RESOLVED'));
+
+      await expect(service.start(ID)).rejects.toThrow('net::ERR_NAME_NOT_RESOLVED');
+      await flush();
+
+      expect(failedWrites()).toBeGreaterThanOrEqual(1);
+      expect(errorHooks()).toBe(1);
+      expect(internals().reconnectStates.has(ID)).toBe(false);
+    });
+
+    it('drops the spent state when the entry guard finds a stop mark', async () => {
+      const i = internals();
+      const state = armState({ timer: setTimeout(() => undefined, 60_000) });
+      clearTimeout(state.timer!);
+      i.stoppingSessions.add(ID);
+
+      await i.executeReconnect(ID, createMockSession(), state);
+
+      expect(i.reconnectStates.has(ID)).toBe(false);
+      expect(lifecycle.isEngineActive(ID)).toBe(false);
+      expect(engineFactory.create).not.toHaveBeenCalled();
     });
   });
 
