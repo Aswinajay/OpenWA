@@ -2689,6 +2689,29 @@ describe('SessionService', () => {
       expect(result.lastError).toMatch(/^Reconnecting after a dropped connection \(attempt 5, down for /);
     });
 
+    it('keeps lastError current on every attempt past the fifth, while the alert stays on its cadence', async () => {
+      const callbacks = await startAndCapture();
+      (webhookService.dispatch as jest.Mock).mockClear();
+      const sessionErrors = (service as unknown as { sessionErrors: SessionErrorStore }).sessionErrors;
+      const start = Date.now();
+      const now = jest.spyOn(Date, 'now');
+      try {
+        for (let attempt = 1; attempt <= 9; attempt++) {
+          now.mockReturnValue(start + (attempt - 1) * 60_000); // one minute between attempts
+          callbacks.onReconnecting?.(attempt, 60_000);
+          if (attempt >= 6) {
+            expect(sessionErrors.get('sess-uuid-1')).toBe(
+              `Reconnecting after a dropped connection (attempt ${attempt}, down for ${attempt - 1}m).`,
+            );
+          }
+        }
+      } finally {
+        now.mockRestore();
+      }
+
+      expect(loopDispatches()).toHaveLength(1);
+    });
+
     it('never fires onDisconnected: the session is still linked and the engine owns the retry', async () => {
       const callbacks = await startAndCapture();
       (repository.update as jest.Mock).mockClear();

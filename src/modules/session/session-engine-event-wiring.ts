@@ -283,17 +283,20 @@ export class SessionEngineEventWiring {
         // Below the loop threshold this is a blip, not an episode: the 515 restart WhatsApp asks for
         // right after a successful pairing is one attempt, and so is any drop that comes straight
         // back. Reporting those would put "reconnecting" on a session that is linking normally.
-        if (attempt % RECONNECT_LOOP_ALERT_INTERVAL_ATTEMPTS !== 0) return;
+        if (attempt < RECONNECT_LOOP_ALERT_INTERVAL_ATTEMPTS) return;
 
         const downForSeconds = Math.round((Date.now() - reconnectingSince) / 1000);
         const downFor = downForSeconds >= 120 ? `${Math.round(downForSeconds / 60)}m` : `${downForSeconds}s`;
         // The engine holds the session at INITIALIZING for the whole episode, which is the same thing
         // it reports for a session waiting to be paired. Record why, so `lastError` says so on
-        // GET /sessions/:id, the only durable operator surface this path reaches.
+        // GET /sessions/:id, the only durable operator surface this path reaches. Rewritten on every
+        // attempt from here on, so the attempt and the downtime it shows never lag the episode.
         host.sessionErrors.set(
           id,
           `Reconnecting after a dropped connection (attempt ${attempt}, down for ${downFor}).`,
         );
+        if (attempt % RECONNECT_LOOP_ALERT_INTERVAL_ATTEMPTS !== 0) return;
+
         // Same cadence, same log shape and the same already-documented webhook the service-level
         // reconnect path emits, so an operator watching for a stuck session does not have to know
         // which layer happens to be doing the retrying.
