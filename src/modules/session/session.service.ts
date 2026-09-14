@@ -81,8 +81,8 @@ export const AUTOSTART_THROTTLE_MS = 2_000;
 
 /**
  * Statuses that assert an engine is running somewhere. The boot reset clears them for every row this
- * node may claim; markLapsedDisconnected clears them for a row whose holder never came back. FAILED
- * and CREATED stay out of both: an operator has to see them.
+ * node may claim; markLapsedDisconnected clears the subset below for a row whose holder never came
+ * back. FAILED and CREATED stay out of both: an operator has to see them.
  */
 const ACTIVE_STATUSES = [
   SessionStatus.READY,
@@ -91,6 +91,16 @@ const ACTIVE_STATUSES = [
   SessionStatus.AUTHENTICATING,
   SessionStatus.ACTION_REQUIRED,
 ];
+
+/**
+ * What markLapsedDisconnected corrects: every active status the takeover sweep adopts anyway, so a
+ * correction never changes what the sweep adopts. AUTHENTICATING and ACTION_REQUIRED are in: both
+ * claim a running engine, and whatever a human was asked to do lived in the engine that died with its
+ * node. QR_READY is left out because correcting it would change adoption: the sweep never adopts a
+ * mid-pairing session, but it does adopt a DISCONNECTED one with a phone, so rewriting it would launch
+ * an engine that only renders a QR nobody asked for.
+ */
+const LAPSED_CORRECTED_STATUSES: SessionStatus[] = ACTIVE_STATUSES.filter(status => status !== SessionStatus.QR_READY);
 
 /**
  * The session-record API: CRUD over the sessions table, aggregate stats, and the thin engine query
@@ -874,29 +884,41 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
    * `goneBefore` is the caller's "really gone" cutoff, not simply now: a lease lapses while its
    * holder is perfectly healthy whenever a query runs long, and the next heartbeat re-extends it.
    * Acting on a single lapse would report a live peer's sessions as disconnected, and nothing would
-   * correct it, because that peer's renewal still finds its own nodeId and detects no loss.
+   * correct it, because that peer's renewal still finds its own nodeId and detects no loss. The cutoff
+   * narrows that case without closing it: a holder cut off from the database for longer than the
+   * cutoff is marked too, and does not write its status back once it reconnects.
    */
   async markLapsedDisconnected(sessions: Session[], goneBefore: Date): Promise<string[]> {
     const marked: string[] = [];
     for (const session of sessions) {
-      if (!ACTIVE_STATUSES.includes(session.status)) continue;
+      if (!LAPSED_CORRECTED_STATUSES.includes(session.status)) continue;
       // Both are guaranteed non-null by the lapsed-claim query that produced these rows, and both are
-      // load-bearing in the predicate below: TypeORM drops an `undefined` value from a where clause
-      // rather than matching on it, so a null here would silently widen the update.
+      // load-bearing in the predicate below. TypeORM throws on a null or undefined where value, so a
+      // null here would fail this row's write instead of matching on it.
       if (session.nodeId == null) continue;
       if (session.leaseExpiresAt == null || session.leaseExpiresAt >= goneBefore) continue;
       // Written on the same predicate the read used, never by id alone: a peer, or this node's own
       // adopt loop, can claim and start this row at any moment, and a claim rewrites `nodeId`, so a
       // row that was taken matches nothing here and keeps the status its start gave it.
-      const { affected } = await this.sessionRepository.update(
-        {
-          id: session.id,
-          nodeId: session.nodeId,
-          leaseExpiresAt: LessThan(goneBefore),
-          status: session.status,
-        },
-        { status: SessionStatus.DISCONNECTED },
-      );
+      let affected: number | undefined;
+      try {
+        ({ affected } = await this.sessionRepository.update(
+          {
+            id: session.id,
+            nodeId: session.nodeId,
+            leaseExpiresAt: LessThan(goneBefore),
+            status: session.status,
+          },
+          { status: SessionStatus.DISCONNECTED },
+        ));
+      } catch (error) {
+        // One row's failed write must not strand the rows after it. The next sweep retries this one.
+        this.logger.warn(`Failed to correct the status session ${session.name} was left in`, {
+          sessionId: session.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
       if (!affected) continue;
       this.logger.warn(`Session ${session.name} was left ${session.status} by a node that never came back`, {
         sessionId: session.id,
