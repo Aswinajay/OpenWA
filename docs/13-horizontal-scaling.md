@@ -35,10 +35,17 @@
 > ones are left alone, and a cleanly stopped session releases its claim so it is never
 > "lapsed". Adopting a session fails its stuck in-flight batches (no auto-resume — the dead
 > node's already-sent messages are unknowable). Adopting is gated by the same
-> `AUTO_START_SESSIONS` flag as boot auto-start; the sweep itself is not, because it also has a job
-> that starts nothing: a row a vanished node left in a running status is marked disconnected once its
-> lease has been silent for two TTLs. Nothing else revisits such a row, since the boot reset skips a
-> foreign claim that is still live.
+> `AUTO_START_SESSIONS` flag as boot auto-start; the sweep itself is not, and runs on every node,
+> because it also has a job that starts nothing: a row a vanished node left `ready`, `initializing`,
+> `authenticating` or `action_required` is marked disconnected once its lease expired more than two
+> TTLs ago, which is three TTLs after the holder's last renewal plus up to one sweep interval. A
+> `qr_ready` row keeps its status, so the correction never makes a mid-pairing session adoptable.
+> Nothing else revisits such a row, since the boot reset skips a foreign claim that is still live.
+>
+> Known limitation: a holder that is alive but cannot reach the database for more than three lease
+> TTLs minus one heartbeat (160s at defaults) is marked disconnected by a peer too, and does not write its status back when it reconnects. Its
+> renewal still finds its own claim, so it detects no loss, and a steadily connected engine emits no
+> new status. The row reads `disconnected` until that engine's status next changes.
 >
 > **Request routing now exists, opt-in via `NODE_URL`.** When every node sets its own
 > reachable URL (e.g. `NODE_URL=http://10.0.0.5:2785`), a session-scoped request landing on
@@ -57,6 +64,11 @@
 > node whose clock runs more than one lease TTL (default 60s) ahead sees healthy peers as lapsed and
 > will take their sessions over. Run NTP (or any time sync) on every node — the default on ordinary
 > server images — and treat a skew larger than `SESSION_LEASE_TTL_MS` as a misconfiguration.
+> The status correction reads the same timestamps: a node whose clock runs more than three TTLs minus
+> one heartbeat ahead (160s at defaults) marks a healthy peer's sessions disconnected, even with
+> `AUTO_START_SESSIONS` off, and nothing writes them back. On PostgreSQL the lease columns hold a
+> local wall time with no zone, so every node must also run in the same time zone (`TZ`): a node east
+> of a peer reads that peer's leases as expired by the offset between them.
 >
 > **A forwarded request is throttled on both nodes.** The receiving node counts it before
 > forwarding, and the owner counts it again on arrival; with `REDIS_ENABLED=true` both counts land

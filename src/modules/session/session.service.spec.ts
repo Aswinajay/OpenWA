@@ -2527,6 +2527,116 @@ describe('SessionService', () => {
       expect(marked).toEqual([]);
       expect(repository.update).not.toHaveBeenCalled();
     });
+
+    // The takeover sweep adopts every corrected status anyway, so a correction never changes what it
+    // adopts. QR_READY is the exception: the sweep never adopts a mid-pairing session but does adopt a
+    // DISCONNECTED one with a phone, so rewriting it would launch an engine that only renders a QR.
+    it('corrects every running status the takeover sweep adopts, and leaves QR_READY alone', async () => {
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+      const rows = [
+        SessionStatus.READY,
+        SessionStatus.INITIALIZING,
+        SessionStatus.AUTHENTICATING,
+        SessionStatus.ACTION_REQUIRED,
+        SessionStatus.QR_READY,
+      ].map(status => stranded({ id: status, status, phone: '628123' }));
+
+      const marked = await service.markLapsedDisconnected(rows, GONE_BEFORE);
+
+      expect(marked).toEqual([
+        SessionStatus.READY,
+        SessionStatus.INITIALIZING,
+        SessionStatus.AUTHENTICATING,
+        SessionStatus.ACTION_REQUIRED,
+      ]);
+    });
+
+    it('a failed write on one row does not stop the rows after it', async () => {
+      (repository.update as jest.Mock)
+        .mockRejectedValueOnce(new Error('SQLITE_BUSY: database is locked'))
+        .mockResolvedValueOnce({ affected: 1 });
+
+      const marked = await service.markLapsedDisconnected(
+        [stranded({ id: 'boom' }), stranded({ id: 'fine' })],
+        GONE_BEFORE,
+      );
+
+      expect(marked).toEqual(['fine']);
+    });
+
+    // This process never hosts the engine, so its de-dup map never sees the READY another node
+    // announced in between, and still holds the DISCONNECTED from its own first correction.
+    it('announces a second correction of the same session after another node ran it in between', async () => {
+      (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+
+      await service.markLapsedDisconnected([stranded({ nodeId: 'node-c' })], GONE_BEFORE);
+      // node-d claims the row, reaches READY and vanishes too; none of that happens on this process.
+      await service.markLapsedDisconnected([stranded({ nodeId: 'node-d' })], GONE_BEFORE);
+
+      const disconnected = { sessionId: 'stranded-1', status: SessionStatus.DISCONNECTED };
+      expect(webhookService.dispatch).toHaveBeenCalledTimes(2);
+      expect(webhookService.dispatch).toHaveBeenNthCalledWith(2, 'stranded-1', 'session.status', disconnected);
+      expect(eventsGateway.emitSessionStatus).toHaveBeenCalledTimes(2);
+    });
+
+    // The mocks above show what the predicate asks for; whether it filters is SQL. A snapshot read
+    // before a renewal lands is the race the predicate exists for: the write has to refuse a row whose
+    // lease moved on, even though the snapshot still says that lease is long gone.
+    describe('against a real database', () => {
+      const TTL_MS = 60_000;
+      let db: DataSource;
+      let sessions: Repository<Session>;
+
+      beforeAll(async () => {
+        db = new DataSource({ type: 'better-sqlite3', database: ':memory:', entities: [Session], synchronize: true });
+        await db.initialize();
+        sessions = db.getRepository(Session);
+      });
+
+      afterAll(async () => {
+        await db.destroy();
+      });
+
+      beforeEach(() => {
+        (repository.update as jest.Mock).mockImplementation((...args: Parameters<Repository<Session>['update']>) =>
+          sessions.update(...args),
+        );
+      });
+
+      afterEach(async () => {
+        await sessions.clear();
+      });
+
+      it('writes only a row whose lease is still more than two TTLs past expiry when the write lands', async () => {
+        const now = Date.now();
+        const seed = (name: string): Promise<Session> =>
+          sessions.save(
+            sessions.create({
+              name,
+              status: SessionStatus.READY,
+              config: {},
+              nodeId: 'dead-node',
+              leaseExpiresAt: new Date(now - 3 * TTL_MS),
+            }),
+          );
+        const renewed = await seed('renewed');
+        const lapsedOnce = await seed('lapsed-once');
+        const gone = await seed('gone');
+        const snapshot = await sessions.find();
+
+        // Between the read and the write, one holder renews and another has lapsed only once since.
+        await sessions.update({ id: renewed.id }, { leaseExpiresAt: new Date(now + TTL_MS) });
+        await sessions.update({ id: lapsedOnce.id }, { leaseExpiresAt: new Date(now - TTL_MS) });
+
+        const marked = await service.markLapsedDisconnected(snapshot, new Date(now - 2 * TTL_MS));
+
+        expect(marked).toEqual([gone.id]);
+        const statusOf = async (id: string): Promise<SessionStatus> => (await sessions.findOneByOrFail({ id })).status;
+        expect(await statusOf(renewed.id)).toBe(SessionStatus.READY);
+        expect(await statusOf(lapsedOnce.id)).toBe(SessionStatus.READY);
+        expect(await statusOf(gone.id)).toBe(SessionStatus.DISCONNECTED);
+      });
+    });
   });
 
   // An engine that retries a dropped connection ON ITS OWN never reaches the service-level reconnect
