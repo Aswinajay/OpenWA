@@ -566,6 +566,21 @@ test('a failed mount read is retried when the feed first connects after its own 
   assert.equal(screen.queryByText('gateway unavailable') === null, true, 'the failed read error is still shown');
 });
 
+test('a read-only key gets no Show QR button, since the QR is operator-only', async () => {
+  const { screen, within } = rtl;
+  resetFetchCalls();
+  window.localStorage.setItem('openwa_user_role', 'viewer');
+  try {
+    renderSessions();
+    const card = (await screen.findByText('new-device')).closest('.session-card') as HTMLElement;
+    // The pairing placeholder still renders; only the action that would poll a 403 is gone.
+    assert.ok(card.querySelector('.qr-placeholder'));
+    assert.equal(within(card).queryByRole('button', { name: 'Show QR' }) === null, true);
+  } finally {
+    window.localStorage.setItem('openwa_user_role', 'admin');
+  }
+});
+
 // ── Auto-reject toggle ───────────────────────────────────────────────────────
 
 async function openDetailFor(name: string): Promise<HTMLInputElement> {
