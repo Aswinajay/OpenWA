@@ -26,6 +26,9 @@ import { type createLogger } from '../../common/services/logger.service';
 import { userPart } from '../../engine/identity/wa-id';
 import { SessionEngineLeafEvents } from './session-engine-leaf-events';
 
+/** The lastError an engine-internal reconnect episode records; onQRCode clears only this one. */
+const RECONNECT_LOOP_REASON = 'Reconnecting after a dropped connection';
+
 /**
  * The call-ins SessionEngineEventWiring needs from the lifecycle core. Built ONCE in the
  * lifecycle's constructor. Only the CLOSURE members are live-read: the arrow closures bind the
@@ -173,6 +176,11 @@ export class SessionEngineEventWiring {
           );
         }
 
+        // A QR shows WhatsApp answered. Left in place, the recorded reconnect text would reappear in every
+        // INITIALIZING gap between QR windows of a session waiting to be paired; if closes keep failing
+        // after the QR, the next attempt from the fifth on writes it again. Any other reason stays.
+        if (host.sessionErrors.get(id)?.startsWith(RECONNECT_LOOP_REASON)) host.sessionErrors.clear(id);
+
         void host.webhookService.dispatch(id, 'session.qr', { sessionId: id, qr });
 
         // Push the QR to subscribed dashboard clients over the WebSocket (the `session.qr` event is
@@ -291,10 +299,7 @@ export class SessionEngineEventWiring {
         // it reports for a session waiting to be paired. Record why, so `lastError` says so on
         // GET /sessions/:id, the only durable operator surface this path reaches. Rewritten on every
         // attempt from here on, so the attempt and the downtime it shows never lag the episode.
-        host.sessionErrors.set(
-          id,
-          `Reconnecting after a dropped connection (attempt ${attempt}, down for ${downFor}).`,
-        );
+        host.sessionErrors.set(id, `${RECONNECT_LOOP_REASON} (attempt ${attempt}, down for ${downFor}).`);
         if (attempt % RECONNECT_LOOP_ALERT_INTERVAL_ATTEMPTS !== 0) return;
 
         // Same cadence, same log shape and the same already-documented webhook the service-level

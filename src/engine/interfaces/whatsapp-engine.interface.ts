@@ -791,9 +791,9 @@ export interface EngineEventCallbacks {
    * it; the engine keeps owning the retry.
    *
    * `attempt` is the 1-based number of the attempt being scheduled, and it resets once the connection
-   * is back or WhatsApp answers with a QR (or after a long enough healthy stretch), so attempt 1
-   * always opens a fresh episode. A session waiting to be paired is not reconnecting: the close that
-   * ends an unscanned QR window is never reported.
+   * is back, a QR is scanned or a QR window runs out (or after a long enough healthy stretch), so
+   * attempt 1 always opens a fresh episode. The close that ends an unscanned QR window is not a reconnect
+   * and is never reported; any other close while a QR waits is.
    * `nextDelayMs` is how long the engine waits before making it. Together they are what a consumer
    * needs to tell a one-second blip from a session that has been down for an hour, which the status
    * alone cannot: the engine reports INITIALIZING for the whole episode, exactly as it does for a
