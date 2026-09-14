@@ -79,7 +79,9 @@ stale in-flight write from A would clobber B's status.
 **Defense:** on lease loss, `stopOrphanEngines` destroys local engines; the session row is the
 owning node's alone (`session.service.ts` boot path). The one exception is the takeover sweep's
 `markLapsedDisconnected`, which marks a row disconnected only under the predicate it read (same
-`nodeId`, same status, lease expired more than two TTLs ago), so a row B has claimed matches nothing.
+`nodeId`, same status, lease expired more than two TTLs ago, and for a `qr_ready` row still no
+phone), so a row B has claimed, or a pairing that completed meanwhile, matches nothing. A `qr_ready`
+row with a phone is never marked: the adoption sweep would take the resulting disconnected row over.
 **Pinned by:** `src/modules/takeover/session-takeover.service.spec.ts` +
 `session-ownership.service.spec.ts` + `session-ownership-status-fence.spec.ts` + the real-database
 predicate spec for `markLapsedDisconnected` in `src/modules/session/session.service.spec.ts`.

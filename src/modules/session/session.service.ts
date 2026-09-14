@@ -81,8 +81,9 @@ export const AUTOSTART_THROTTLE_MS = 2_000;
 
 /**
  * Statuses that assert an engine is running somewhere. The boot reset clears them for every row this
- * node may claim; markLapsedDisconnected clears the subset below for a row whose holder never came
- * back. FAILED and CREATED stay out of both: an operator has to see them.
+ * node may claim; markLapsedDisconnected clears them for a row whose holder never came back, a
+ * QR_READY row only while it has no phone. FAILED and CREATED stay out of both: an operator has to
+ * see them.
  */
 const ACTIVE_STATUSES = [
   SessionStatus.READY,
@@ -91,16 +92,6 @@ const ACTIVE_STATUSES = [
   SessionStatus.AUTHENTICATING,
   SessionStatus.ACTION_REQUIRED,
 ];
-
-/**
- * What markLapsedDisconnected corrects: every active status the takeover sweep adopts anyway, so a
- * correction never changes what the sweep adopts. AUTHENTICATING and ACTION_REQUIRED are in: both
- * claim a running engine, and whatever a human was asked to do lived in the engine that died with its
- * node. QR_READY is left out because correcting it would change adoption: the sweep never adopts a
- * mid-pairing session, but it does adopt a DISCONNECTED one with a phone, so rewriting it would launch
- * an engine that only renders a QR nobody asked for.
- */
-const LAPSED_CORRECTED_STATUSES: SessionStatus[] = ACTIVE_STATUSES.filter(status => status !== SessionStatus.QR_READY);
 
 /**
  * The session-record API: CRUD over the sessions table, aggregate stats, and the thin engine query
@@ -891,7 +882,16 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
   async markLapsedDisconnected(sessions: Session[], goneBefore: Date): Promise<string[]> {
     const marked: string[] = [];
     for (const session of sessions) {
-      if (!LAPSED_CORRECTED_STATUSES.includes(session.status)) continue;
+      if (!ACTIVE_STATUSES.includes(session.status)) continue;
+      // A correction must never change what the takeover sweep adopts. It adopts every other active
+      // status anyway: AUTHENTICATING and ACTION_REQUIRED claim a running engine too, and whatever a
+      // human was asked to do lived in the engine that died with its node. It never adopts a row
+      // without a phone, but it does adopt a DISCONNECTED row with one, so rewriting a QR_READY row
+      // that has a phone would launch an engine that only renders a QR nobody asked for. QR_READY is
+      // therefore corrected only without a phone, re-checked in the write below in case a pairing
+      // completes in between.
+      const unlinkedOnly = session.status === SessionStatus.QR_READY;
+      if (unlinkedOnly && session.phone != null) continue;
       // Both are guaranteed non-null by the lapsed-claim query that produced these rows, and both are
       // load-bearing in the predicate below. TypeORM throws on a null or undefined where value, so a
       // null here would fail this row's write instead of matching on it.
@@ -908,6 +908,7 @@ export class SessionService implements OnModuleDestroy, OnModuleInit, OnApplicat
             nodeId: session.nodeId,
             leaseExpiresAt: LessThan(goneBefore),
             status: session.status,
+            ...(unlinkedOnly && { phone: IsNull() }),
           },
           { status: SessionStatus.DISCONNECTED },
         ));
