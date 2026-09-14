@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - The group invite-code read, over REST or the MCP `GroupGetInviteCode` tool, requires the OPERATOR role; the code is a transferable join capability, so a VIEWER key can no longer extract it ([GHSA-45fh-xj7x-vj2x](https://github.com/rmyndharis/OpenWA/security/advisories/GHSA-45fh-xj7x-vj2x)). Thanks Matija Petronijević for the report.
+- The amd64 image ships Chrome for Testing 153.0.8010.36 instead of 146.0.7680.31, picking up the browser security fixes released since (the arm64 image uses the Debian chromium package).
 
 ### Added
 
