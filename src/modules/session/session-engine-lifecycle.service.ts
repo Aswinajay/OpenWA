@@ -58,7 +58,7 @@ const RECONNECT_MAX_ATTEMPTS_CAP = 20;
 
 /** Coerce + clamp the untyped session.config reconnect knobs to finite, bounded values. Defaults are
  *  a 5000ms base delay and UNLIMITED attempts (`Infinity`): a long-lived session must keep retrying
- *  (the backoff parks at the 1h cap) instead of dying permanently after ~2.5 minutes. An EXPLICIT
+ *  (the backoff parks at the 5-minute cap) instead of dying permanently after ~2.5 minutes. An EXPLICIT
  *  `maxReconnectAttempts: 0` (disable) is preserved, and 1..20 clamps as before. */
 export function resolveReconnectConfig(
   config: { maxReconnectAttempts?: unknown; reconnectBaseDelay?: unknown } | null,
@@ -970,7 +970,7 @@ export class SessionEngineLifecycle {
     const state = this.reconnectStates.get(id);
     if (!state) return;
 
-    // All the backoff rules (stability reset, budget, exponential delay, loop cadence) live in the
+    // All the backoff rules (budget, exponential delay, loop cadence) live in the
     // pure policy; this method only applies the effects the decision calls for.
     const decision = decideReconnect(state);
 

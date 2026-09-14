@@ -1646,16 +1646,17 @@ describe('SessionService', () => {
           timer: NodeJS.Timeout | null;
           maxAttempts: number;
           baseDelay: number;
-          lastAttemptAt?: number;
         }
       >;
+      engines: { set: (id: string, engine: unknown) => void };
       sessionErrors: Map<string, string>;
       scheduleReconnect: (id: string, session: Session) => void;
       executeReconnect: (...args: unknown[]) => Promise<void>;
+      handleEngineReady: (id: string, engine: unknown, phone: string, pushName: string) => void;
     };
     const internals = (): PolicyInternals => lifecycle as unknown as PolicyInternals;
 
-    it('keeps scheduling past the old 5-attempt budget by default (unlimited), the backoff parking at the 1h cap', () => {
+    it('keeps scheduling past the old 5-attempt budget by default (unlimited), the backoff parking at the 5-minute cap', () => {
       jest.useFakeTimers();
       try {
         const i = internals();
@@ -1675,8 +1676,8 @@ describe('SessionService', () => {
         expect(jest.getTimerCount()).toBe(1); // still exactly one pending timer
 
         // The 12th schedule computed its delay with attempts=11: 5000*2^11 ≈ 10.24M ms, clamped to
-        // the 1h cap — the timer fires exactly at the cap, not earlier.
-        jest.advanceTimersByTime(3_599_999);
+        // the 5-minute cap; the timer fires exactly at the cap, not earlier.
+        jest.advanceTimersByTime(299_999);
         expect(exec).not.toHaveBeenCalled();
         jest.advanceTimersByTime(1);
         expect(exec).toHaveBeenCalledTimes(1);
@@ -1686,37 +1687,46 @@ describe('SessionService', () => {
       }
     });
 
-    it('resets the attempt budget after a 5-minute stable stretch (transient drops must not accrue)', () => {
+    it('resets the attempt budget only on READY, never because time passed between attempts', () => {
       jest.useFakeTimers();
       try {
         const i = internals();
-        const state = {
-          attempts: 4,
-          timer: null,
-          maxAttempts: Number.POSITIVE_INFINITY,
-          baseDelay: 5000,
-          lastAttemptAt: Date.now(),
-        };
+        (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+        const state = { attempts: 0, timer: null, maxAttempts: 7, baseDelay: 5000 };
         i.reconnectStates.set('sess-uuid-1', state);
         const exec = jest.spyOn(i, 'executeReconnect').mockResolvedValue(undefined);
+        // Each failed attempt lands after its whole delay (at most the 5-minute cap) plus a 2 s connect.
+        const failedAttempt = (): void => {
+          i.scheduleReconnect('sess-uuid-1', createMockSession());
+          jest.advanceTimersByTime(302_000);
+        };
 
-        // A drop 299s after the last attempt is still the same bad stretch: the budget keeps accruing.
-        jest.advanceTimersByTime(299_999);
-        i.scheduleReconnect('sess-uuid-1', createMockSession());
-        expect(state.attempts).toBe(5); // 4 -> 5, no reset
+        for (let k = 0; k < 6; k++) failedAttempt();
+        expect(state.attempts).toBe(6);
 
-        // ≥5 min since the last attempt means the session demonstrably stayed up — the budget
-        // restarts at 0 (the first schedule's 80s timer fires during this advance; irrelevant here).
-        jest.advanceTimersByTime(300_000);
+        // READY is the only reset, so the next drop restarts at the base delay (~5s).
+        const engine = {
+          getStatus: jest.fn().mockReturnValue(EngineStatus.READY),
+          forceDestroy: jest.fn().mockResolvedValue(undefined),
+        };
+        i.engines.set('sess-uuid-1', engine);
+        i.handleEngineReady('sess-uuid-1', engine, '628123', 'Tester');
+        expect(state.attempts).toBe(0);
         i.scheduleReconnect('sess-uuid-1', createMockSession());
         expect(state.attempts).toBe(1);
-
-        // ...so the backoff restarts at the base delay (~5s), not 2^4 × base (80s).
         const callsBefore = exec.mock.calls.length;
         jest.advanceTimersByTime(4_999);
         expect(exec.mock.calls.length).toBe(callsBefore);
         jest.advanceTimersByTime(1_001);
         expect(exec.mock.calls.length).toBe(callsBefore + 1);
+
+        // Six more slow failures spend the explicit budget of 7; the next drop is terminal.
+        jest.advanceTimersByTime(302_000);
+        for (let k = 0; k < 6; k++) failedAttempt();
+        expect(state.attempts).toBe(7);
+        expect(i.sessionErrors.get('sess-uuid-1')).toBeUndefined();
+        i.scheduleReconnect('sess-uuid-1', createMockSession());
+        expect(i.sessionErrors.get('sess-uuid-1')).toMatch(/Reconnection failed after 7 attempts/);
       } finally {
         jest.clearAllTimers();
         jest.useRealTimers();
@@ -1755,10 +1765,11 @@ describe('SessionService', () => {
           timer: NodeJS.Timeout | null;
           maxAttempts: number;
           baseDelay: number;
-          lastAttemptAt?: number;
         }
       >;
+      engines: { set: (id: string, engine: unknown) => void };
       scheduleReconnect: (id: string, session: Session) => void;
+      handleEngineReady: (id: string, engine: unknown, phone: string, pushName: string) => void;
     };
     const internals = (): LoopInternals => lifecycle as unknown as LoopInternals;
     const loopDispatches = (): unknown[][] =>
@@ -1814,33 +1825,28 @@ describe('SessionService', () => {
         expect(calls[0][2]).toMatchObject({ sessionId: 'sess-uuid-1', attempts: 5 });
         expect((calls[0][2] as { nextDelayMs: number }).nextDelayMs).toBeGreaterThanOrEqual(80_000);
         expect((calls[0][2] as { nextDelayMs: number }).nextDelayMs).toBeLessThan(81_000);
-        // Attempt 10: computed with attempts=9 → 5000*2^9 = 2560s (+ <1s jitter).
-        expect(calls[1][2]).toMatchObject({ sessionId: 'sess-uuid-1', attempts: 10 });
-        expect((calls[1][2] as { nextDelayMs: number }).nextDelayMs).toBeGreaterThanOrEqual(2_560_000);
-        expect((calls[1][2] as { nextDelayMs: number }).nextDelayMs).toBeLessThan(2_561_000);
+        // Attempt 10: computed with attempts=9 → 5000*2^9 = 2560s, clamped to the 5-minute cap.
+        expect(calls[1][2]).toMatchObject({ sessionId: 'sess-uuid-1', attempts: 10, nextDelayMs: 300_000 });
       } finally {
         jest.clearAllTimers();
         jest.useRealTimers();
       }
     });
 
-    it('re-arms the alert after a stability reset: the next alert waits 5 fresh attempts', () => {
+    it('re-arms the alert after READY: the next alert waits 5 fresh attempts', () => {
       jest.useFakeTimers();
       try {
         const i = internals();
-        // Four attempts already consumed, then the session stayed up ≥5 min — the budget resets.
-        const state = {
-          attempts: 4,
-          timer: null,
-          maxAttempts: Number.POSITIVE_INFINITY,
-          baseDelay: 5000,
-          lastAttemptAt: Date.now(),
-        };
+        // Four attempts already consumed, then the session reached READY, which resets the budget.
+        const state = { attempts: 4, timer: null, maxAttempts: Number.POSITIVE_INFINITY, baseDelay: 5000 };
         i.reconnectStates.set('sess-uuid-1', state);
+        (repository.update as jest.Mock).mockResolvedValue({ affected: 1 });
+        const engine = { getStatus: jest.fn().mockReturnValue(EngineStatus.READY) };
+        i.engines.set('sess-uuid-1', engine);
 
         const alertsBefore = getSessionReconnectLoopAlertsTotal();
 
-        jest.advanceTimersByTime(300_000); // stability window elapses (no timer pending yet)
+        i.handleEngineReady('sess-uuid-1', engine, '628123', 'Tester');
         for (let k = 0; k < 4; k++) {
           i.scheduleReconnect('sess-uuid-1', createMockSession());
         }

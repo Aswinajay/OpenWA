@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Italian (`it`) dashboard translates the session proxy Save button, the webhook chat-kind filter label and the warning shown when a backup export leaves out media ([#1583](https://github.com/rmyndharis/OpenWA/pull/1583)). Thanks @albanobattistella.
 
+### Fixed
+
+- An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
+
 ## [0.23.5] - 2026-09-14
 
 ### Security
