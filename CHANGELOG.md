@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A request forwarded to the node that owns its session answers `504` or `502`, not `503`, when the forward times out or breaks after the request was sent, so a client retrying on `503` no longer repeats a send the owner may have carried out; `503` remains for an owner that could not be reached at all.
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
