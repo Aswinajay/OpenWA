@@ -14,9 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The Italian (`it`) dashboard translates the session proxy Save button, the webhook chat-kind filter label and the warning shown when a backup export leaves out media ([#1583](https://github.com/rmyndharis/OpenWA/pull/1583)). Thanks @albanobattistella.
+- The dashboard Logs page and its sidebar entry are shown to admin keys only, matching the ADMIN-only `GET /api/audit` it reads.
+- The dashboard Sessions page hides Show QR for viewer keys, since the QR is operator-only.
 
 ### Fixed
 
+- The dashboard Sessions page re-reads the session list once live updates connect after a failed initial load, instead of keeping the error until a reload.
+- The dashboard Templates page shows a load or permission error when the template list cannot be read, instead of "No templates saved".
+- The dashboard Webhooks Configured card shows a placeholder instead of 0 when the webhook list cannot be read.
+- Dashboard message search ignores a response that arrives after a newer query, so stale results no longer replace the current ones.
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
