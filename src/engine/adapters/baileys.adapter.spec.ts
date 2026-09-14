@@ -144,6 +144,7 @@ import {
   EngineEventCallbacks,
   GroupEvent,
   IncomingCallEvent,
+  IncomingMessage,
 } from '../interfaces/whatsapp-engine.interface';
 import { EngineNotReadyError } from '../../common/errors/engine-not-ready.error';
 import { EngineNotSupportedError } from '../../common/errors/engine-not-supported.error';
@@ -1833,6 +1834,74 @@ describe('BaileysAdapter inbound fan-out', () => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const mapped = onHistoryMessages.mock.calls[0][0] as Array<{ id: string; type: string; body: string }>;
     expect(mapped[0]).toMatchObject({ id: 'H1', type: 'text', body: 'disappearing hello' });
+  });
+
+  describe('commerce messages map the same way on the live and history paths', () => {
+    // An order in a disappearing chat, a shared product card, and a share of the whole catalog (the
+    // `catalog` arm of productMessage, with no product id).
+    const commerceMessages = [
+      {
+        key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'ORDER_MSG' },
+        message: { ephemeralMessage: { message: { orderMessage: { orderId: 'ORDER1', token: 'TOKEN1' } } } },
+        messageTimestamp: 1700000050,
+      },
+      {
+        key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'PRODUCT_MSG' },
+        message: {
+          productMessage: {
+            product: { productId: 'PROD1', title: 'Sample' },
+            businessOwnerJid: '628111@s.whatsapp.net',
+          },
+        },
+        messageTimestamp: 1700000051,
+      },
+      {
+        key: { remoteJid: '628111@s.whatsapp.net', fromMe: false, id: 'CATALOG_MSG' },
+        message: { productMessage: { catalog: { title: 'Store' }, businessOwnerJid: '628111@s.whatsapp.net' } },
+        messageTimestamp: 1700000052,
+      },
+    ];
+
+    beforeEach(() => {
+      baileys.getContentType.mockImplementation(realGetContentType);
+      // Baileys unwraps ephemeralMessage (among other wrappers) to the inner message.
+      baileys.normalizeMessageContent.mockImplementation(
+        (m?: { ephemeralMessage?: { message?: unknown } }) => m?.ephemeralMessage?.message ?? m,
+      );
+    });
+
+    const expectCommerce = (mapped: IncomingMessage[]): void => {
+      const byId = new Map(mapped.map(m => [m.id, m]));
+      expect(byId.get('ORDER_MSG')).toMatchObject({ type: 'order', order: { orderId: 'ORDER1', token: 'TOKEN1' } });
+      expect(byId.get('PRODUCT_MSG')).toMatchObject({
+        type: 'product',
+        product: { productId: 'PROD1', title: 'Sample', businessOwnerJid: '628111@c.us' },
+      });
+      expect(byId.get('CATALOG_MSG')).toMatchObject({ type: 'unknown', body: 'Store' });
+      expect(byId.get('CATALOG_MSG')?.product).toBeUndefined();
+    };
+
+    it('live: carries the order and product ids and types a catalog share as unknown', async () => {
+      const onMessage = jest.fn();
+      const adapter = newAdapter();
+      await adapter.initialize({ onMessage });
+      fakeSock.fire('messages.upsert', { type: 'notify', messages: commerceMessages });
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+      expect(onMessage).toHaveBeenCalledTimes(3);
+      expectCommerce((onMessage.mock.calls as Array<[IncomingMessage]>).map(([m]) => m));
+    });
+
+    it('history sync: carries the order and product ids and types a catalog share as unknown', async () => {
+      const onHistoryMessages = jest.fn();
+      const adapter = newAdapter();
+      await adapter.initialize({ onHistoryMessages });
+      fakeSock.fire('messaging-history.set', { contacts: [], chats: [], messages: commerceMessages });
+      await new Promise(r => setImmediate(r));
+      await new Promise(r => setImmediate(r));
+      expect(onHistoryMessages).toHaveBeenCalledTimes(1);
+      expectCommerce((onHistoryMessages.mock.calls as Array<[IncomingMessage[]]>)[0][0]);
+    });
   });
 
   it('surfaces inbound @mentions as neutral mentionedIds (contextInfo.mentionedJid)', async () => {
