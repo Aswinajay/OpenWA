@@ -324,6 +324,13 @@ export class BaileysEvents {
       // `unknown` message.received (#1568). Drop only a message made entirely of those keys. Anything
       // else without a resolvable content type (a call log, a type newer than the bundled proto, which
       // decodes to a lone messageContextInfo) still flows on as `unknown`, as it always has.
+      //
+      // Known limit: a type newer than the bundled proto that arrives in the same stanza as its sender's
+      // key distribution is dropped too. Baileys merges the stanza's decrypted parts into one message
+      // and protobuf decoding discards unknown fields, so it reads { senderKeyDistributionMessage,
+      // messageContextInfo }: nothing records which part the context info came from or that a field was
+      // skipped, and a messageContextInfo field such as messageSecret is not proof of content either,
+      // since the sending client decides what it carries. It stops once the proto knows the type.
       const keys = Object.keys(normalizedRoot ?? {});
       if (keys.every(k => PROTOCOL_NOISE_KEYS.has(k)) && keys.some(k => k !== 'messageContextInfo')) {
         this.host.logger.debug('Dropping contentless protocol message', {
