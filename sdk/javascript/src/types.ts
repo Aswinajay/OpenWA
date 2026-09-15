@@ -120,12 +120,12 @@ export interface ChatPresence {
  * A label create-or-update body. The id travels in the path, because WhatsApp keys the write on it.
  */
 export interface UpsertLabelRequest {
-  /** Leave out to keep the current name. */
+  /** Not preserved when left out: the write replaces the whole label. */
   name?: string;
   /**
    * WhatsApp's colour INDEX (0-19), NOT a hex value — it does not round-trip with the `hexColor`
-   * labels are read back with, because neither engine exposes the mapping. Leave out to keep the
-   * current colour.
+   * labels are read back with, because neither engine exposes the mapping. Not preserved when
+   * left out either.
    */
   color?: number;
 }
