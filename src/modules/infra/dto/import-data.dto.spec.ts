@@ -62,6 +62,28 @@ describe('ImportDataDto', () => {
     expect(description).toContain(`Every one of the ${TABLE_IMPORTERS.length} migration tables`);
   });
 
+  /**
+   * The restore empties every migration table before repopulating, so a key missing from a
+   * documented body is a table the operator who copies that body wipes. The registry has already
+   * grown twice while the examples stayed behind, so every block a reader can copy is pinned to it.
+   */
+  it.each(['docs/06-api-specification.md', 'docs/07-api-collection.md'])(
+    'the %s import-data example shows every table the importer restores',
+    file => {
+      const doc = readFileSync(join(__dirname, '..', '..', '..', '..', ...file.split('/')), 'utf8');
+      const heading = doc.indexOf('#### POST /api/infra/import-data');
+      const section = doc.slice(heading, doc.indexOf('\n#### ', heading + 1));
+      // Odd-indexed pieces of a fence split are the code blocks; the request body is the one that
+      // carries a `tables` container, in whichever language the page writes its examples.
+      const bodies = section.split('```').filter((piece, index) => index % 2 === 1 && piece.includes('"tables"'));
+      expect(bodies).not.toHaveLength(0);
+      for (const body of bodies) {
+        const shown = new Set([...body.matchAll(/"(\w+)":/g)].map(match => match[1]));
+        expect(TABLE_IMPORTERS.map(importer => importer.key).filter(key => !shown.has(key))).toEqual([]);
+      }
+    },
+  );
+
   it('rejects a body with no tables, naming the field', async () => {
     const { errors } = await run({ force: true });
     // Before this DTO the inline `@Body()` type erased, so this body reached the restore and threw
