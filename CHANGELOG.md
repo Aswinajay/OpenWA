@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A logout or force-kill refused as "not started" leaves the session's claim untouched, so a crashed node's session stays visible to the takeover sweep.
 - `GET /api/sessions/:sessionId/presence/:chatId` returns `null` once the session has no running engine, instead of the last presence reported before a stop, logout, force-kill or failure.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
+- The webhook delivery reconciler no longer replays a delivery that is still waiting for a dispatch slot or retrying on the node that dispatched it, which sent a duplicate outside `WEBHOOK_DISPATCH_CONCURRENCY` and could close a slow delivery as failed while it was still running.
+- A webhook delivery shed at `WEBHOOK_DISPATCH_MAX_QUEUED` or refused during shutdown is no longer replayed by the delivery reconciler, so its delivery-failure row no longer reports an event that was delivered after all.
+- `session.reconnect_loop` webhooks carry an idempotency key salted per occurrence, so an alert from a later outage that reaches the same attempt count is no longer deduplicated onto the earlier one or left without a delivery record.
 
 ## [0.23.5] - 2026-09-14
 
