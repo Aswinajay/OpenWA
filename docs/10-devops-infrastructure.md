@@ -275,9 +275,10 @@ volumes:
 > [13 - Horizontal Scaling Guide](./13-horizontal-scaling.md) for the full list and the design
 > sketch. What multi-node eventually buys is engine capacity, not shared engine state: live engine
 > handles live in exactly one process's `EngineRegistry` (`src/engine/engine-registry.service.ts`),
-> and the hard requirements include a stable `NODE_ID` across restarts, NTP-synced clocks in one
-> time zone without daylight saving (lease skew beyond the TTL wrongfully transfers a session),
-> sticky sessions, `TRUSTED_PROXIES` for forwarded calls, Redis and Postgres.
+> and the hard requirements include a stable `NODE_ID` across restarts, NTP-synced clocks (lease skew
+> beyond the TTL wrongfully transfers a session; the zone each node runs in no longer matters, since
+> the Postgres data connection is pinned to UTC), sticky sessions, `TRUSTED_PROXIES` for forwarded
+> calls, Redis and Postgres.
 
 ### Helm Chart (Kubernetes)
 
