@@ -551,10 +551,13 @@ network cannot reach WhatsApp directly. Set `proxyUrl`/`proxyType` on the same r
 > WebSocket never connects, **no QR code is ever delivered**, and `POST /api/sessions/:sessionId/start`
 > returns `504 Gateway Timeout` after ~30s. Leave `proxyUrl` unset unless you genuinely need a proxy.
 
-On the Baileys engine a `socks4` proxy carries the WebSocket and media uploads only: inbound media is not
-downloaded (it arrives as the omitted marker) and the WhatsApp Web version is not looked up remotely, so
-neither can leave outside the proxy. With `socks5`, `http` or `https` both also go through the proxy. Fetches
-of a URL you pass in, such as a catalog product `imageUrl` or an opt-in link preview, still connect directly.
+On the Baileys engine, with `socks5`, `http` or `https`, the proxy also carries everything the engine fetches
+over HTTP: inbound media, the WhatsApp Web version lookup, the history-sync and app-state payloads of the
+initial sync, and a product card's `imageUrl`. A `socks4` proxy carries the WebSocket and media uploads only,
+because the HTTP client has no SOCKS4 transport: inbound media is not downloaded (it arrives as the omitted
+marker) and the WhatsApp Web version is not looked up remotely, while the initial-sync payloads and a product
+card's `imageUrl` are still fetched directly. On every proxy scheme, a media URL you pass to a send or to
+`POST /api/media/convert` is fetched by the gateway itself, directly, not through the session proxy.
 
 **Response** `201`
 

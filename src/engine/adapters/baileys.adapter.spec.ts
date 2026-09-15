@@ -5196,11 +5196,25 @@ describe('BaileysAdapter proxy support', () => {
     expect(jest.requireMock('@whiskeysockets/baileys').fetchLatestBaileysVersion).not.toHaveBeenCalled();
   });
 
-  it('leaves agent/fetchAgent unset without a proxyUrl', async () => {
+  it('hands the socket config a fetch dispatcher, for the downloads Baileys runs itself', async () => {
+    await proxied('http://user:pass@proxy.example:8080').initialize(noopCallbacks());
+    const options = lastSocketConfig().options as { dispatcher?: unknown };
+    expect(options.dispatcher).toBeInstanceOf(Dispatcher1Wrapper);
+  });
+
+  it('leaves the socket fetch options at the library default for a socks4 proxy', async () => {
+    // Global fetch has no SOCKS4 transport, so there is nothing to hand it; these downloads keep the
+    // direct behaviour they have always had rather than being broken outright.
+    await proxied('socks4://proxy.example:1080').initialize(noopCallbacks());
+    expect(lastSocketConfig().options).toEqual({});
+  });
+
+  it('leaves agent/fetchAgent unset and the fetch options at the library default without a proxyUrl', async () => {
     await newAdapter().initialize(noopCallbacks());
     const cfg = lastSocketConfig();
     expect(cfg.agent).toBeUndefined();
     expect(cfg.fetchAgent).toBeUndefined();
+    expect(cfg.options).toEqual({});
   });
 
   it('fails closed: an unusable proxy value fails initialize instead of connecting direct', async () => {
