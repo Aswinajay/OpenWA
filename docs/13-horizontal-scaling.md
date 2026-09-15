@@ -100,14 +100,25 @@
 > the same flag the throttler and cache already use). The gateway broadcasts to rooms; a Redis
 > pub/sub adapter attached to Socket.IO relays those broadcasts to every replica, so a client
 > connected to node A receives an event raised on node B. Scope honestly: this distributes event
-> **fan-out only**. Mid-connection key eviction (`socketsByKeyId`) is still process-local — a key
-> revoked on node A tears down only A's sockets — as are the per-key WS rate-limit buckets (counted
-> per replica) and the engine registry. Without `REDIS_ENABLED` the adapter is inert and delivery
-> is single-node, exactly as before.
+> **fan-out only**. The per-key WS rate-limit buckets (counted per replica) and the engine registry
+> are still process-local. Without `REDIS_ENABLED` the adapter is inert and delivery is single-node,
+> exactly as before.
 >
-> **What does not exist yet, and is why one replica is still the answer.** The cross-replica gaps
-> just named (key eviction, WS rate-limit state) remain process-local. Not every lifecycle path is
-> fenced: the liveness watchdog and reconnect timers still act on whatever is in the local
+> **Mid-connection key eviction converges on a timer, not a broadcast.** The node that processes a
+> revoke, delete, or narrowing tears down that key's sockets synchronously, in the same request.
+> Nothing is published to peers; instead every node re-validates the keys behind its own live
+> sockets against the database once a minute (`EventsGateway.sweepApiKeyAuthorization`, one batched
+> read of the key ids currently holding sockets) and evicts on a row that is gone, inactive, expired,
+> or whose role, `allowedIps`, `allowedSessions` or expiry no longer matches the snapshot the socket
+> authenticated with. So a peer node's sockets close within a minute of the change. Before, a revoke,
+> delete or expiry there waited for the client's next subscribe, and a narrowing was never caught at
+> all: it leaves the key valid, so only the new subscribe is rejected while every room joined earlier
+> stays joined. That minute is the current worst case for a socket streaming events its key has just
+> lost; a key's REST calls are rejected immediately everywhere, since REST reads the row per request.
+>
+> **What does not exist yet, and is why one replica is still the answer.** The cross-replica gap just
+> named (WS rate-limit state) remains process-local. Not every lifecycle path is fenced: the
+> liveness watchdog and reconnect timers still act on whatever is in the local
 > registry. `BulkMessageService` keeps its live batch state in process, so a takeover cannot resume
 > a batch — only fail it. MCP/agent tool invocations execute on the node that received them rather
 > than being forwarded.

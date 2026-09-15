@@ -270,9 +270,9 @@ volumes:
 > **Keep `replicas: 1`.** Session ownership gained claim/lease fencing (`nodeId` owner +
 > `leaseExpiresAt`), which bounds any two-engine overlap on one session to roughly one heartbeat
 > interval instead of eliminating it — and docs/13 still says DO NOT run its multi-replica examples
-> yet: process-local key eviction, WebSocket rate-limit buckets, the unfenced liveness watchdog,
-> bulk-batch state and MCP locality all remain per-process. Follow
-> [13 - Horizontal Scaling Guide](./13-horizontal-scaling.md) for the full list and the design
+> yet: WebSocket key eviction on a peer node lags by up to a minute, and WebSocket rate-limit
+> buckets, the unfenced liveness watchdog, bulk-batch state and MCP locality all remain per-process.
+> Follow [13 - Horizontal Scaling Guide](./13-horizontal-scaling.md) for the full list and the design
 > sketch. What multi-node eventually buys is engine capacity, not shared engine state: live engine
 > handles live in exactly one process's `EngineRegistry` (`src/engine/engine-registry.service.ts`),
 > and the hard requirements include a stable `NODE_ID` across restarts, NTP-synced clocks in one
