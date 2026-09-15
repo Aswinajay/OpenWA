@@ -102,6 +102,9 @@ export function Sessions() {
   // Set while the last list read failed. Cleared as a read starts, so a connect that already triggered
   // a reload (onReconnect) is not followed by a second read from the recovery effect below.
   const listReadFailed = useRef(false);
+  // Spends the one retry the recovery effect below is allowed per connect. Given back by a read that
+  // actually succeeded, so a later independent failure on the same connection is retried too.
+  const retriedThisConnect = useRef(false);
 
   const fetchSessions = useCallback(async (): Promise<Session[]> => {
     listReadFailed.current = false;
@@ -113,8 +116,9 @@ export function Sessions() {
       const data = await sessionApi.list();
       setSessions(data);
       // The list is current again, so an error left by an earlier failed read (or a create, whose toast
-      // already reported it) no longer describes the page.
+      // already reported it) no longer describes the page, and the recovery retry is available again.
       setError(null);
+      retriedThisConnect.current = false;
       // Keep the shared React Query cache (read by the Dashboard via useSessionsQuery /
       // useSessionStatsQuery) in sync after this page's mutations reload local state — otherwise the
       // Dashboard shows stale session counts/status. This runs on every reload (mount / WS-failed /
@@ -268,8 +272,9 @@ export function Sessions() {
   // onReconnect, and no status push re-reads the list, so the failed mount read would stay on screen
   // with no cards. `error` is a dependency so a read that fails after the connect is retried too, but
   // only once per connect: failures whose messages differ (a 502, then a 504) would otherwise each
-  // change `error` and re-read the list with no backoff for as long as the upstream stays down.
-  const retriedThisConnect = useRef(false);
+  // change `error` and re-read the list with no backoff for as long as the upstream stays down. The
+  // allowance (declared with `listReadFailed` above) is given back by a successful read, so the loop
+  // stays closed while a later failure on the same connection is still retried.
   useEffect(() => {
     if (!isConnected) {
       retriedThisConnect.current = false;
