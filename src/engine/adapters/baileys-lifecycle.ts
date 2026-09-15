@@ -110,11 +110,11 @@ export function createProxyAgent(proxyUrl: string, connectTimeoutMs = PROXY_CONN
 }
 
 /**
- * Build the global-fetch dispatcher for a session egress proxy, used by Baileys' media download and
- * version lookup. Global fetch accepts only an undici dispatcher, never a Node http Agent, and Node's
- * bundled undici predates the handler API of the installed one, so the agent is wrapped to speak the
- * older interface. undici has no SOCKS4 transport: null tells the caller to skip the request rather
- * than send it direct.
+ * Build the global-fetch dispatcher for a session egress proxy, used by Baileys' media download, the
+ * version lookup and the socket's own `options` fetch init. Global fetch accepts only an undici
+ * dispatcher, never a Node http Agent, and Node's bundled undici predates the handler API of the
+ * installed one, so the agent is wrapped to speak the older interface. undici has no SOCKS4 transport:
+ * null tells the caller to skip the request rather than send it direct.
  */
 export function createProxyDispatcher(proxyUrl: string): Dispatcher | null {
   const { protocol, username, password } = new URL(proxyUrl);
@@ -358,6 +358,7 @@ export class BaileysLifecycle {
       }
     }
 
+    const fetchDispatcher = this.fetchDispatcher();
     const sock = b.default({
       auth: state,
       version,
@@ -367,6 +368,12 @@ export class BaileysLifecycle {
       // Media downloads use fetchDispatcher() instead, since Baileys fetches them with global fetch.
       agent: proxyAgent,
       fetchAgent: proxyAgent,
+      // The same dispatcher for the fetches Baileys runs off this config itself: the history-sync
+      // payload, the app-state external blobs, and a URL handed to a send (a product card image).
+      // Without it they leave direct from the host IP even on a proxied session. `{}` is Baileys' own
+      // default for the key, and is what an unproxied session gets, as does a SOCKS4 one: it has no
+      // fetch transport at all, so these keep going direct there as they always have.
+      options: (fetchDispatcher ? { dispatcher: fetchDispatcher } : {}) as RequestInit,
       // Enable the initial sync. Baileys defaults `shouldSyncHistoryMessage` to `() => !!syncFullHistory`,
       // so leaving both unset disables ALL history + app-state sync - no contacts, chats, recent history,
       // or lid->phone mappings ever arrive (the address-book app-state sync only runs once history sync is
