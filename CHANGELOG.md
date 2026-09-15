@@ -93,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A session with an explicit `maxReconnectAttempts` now stops in `failed` once those attempts run out during an outage; before, a limit above about 6 at the default base delay was never reached and the session retried indefinitely.
 - A dashboard or client signed in with a `VIEWER` key no longer receives the pairing QR over the `/events` WebSocket, matching the OPERATOR role `GET /api/sessions/{sessionId}/qr` already required.
 - Installing from source now needs Node.js 22.19 or newer; the published Docker image is unaffected.
+- Python SDK: `ChatHistoryMessage` marks the keys the contract always sends as required and narrows `type` and `kind` to literals, so a hand-built partial dict or a plain `str` assigned to either no longer type-checks.
 
 ## [0.23.4] - 2026-09-05
 
