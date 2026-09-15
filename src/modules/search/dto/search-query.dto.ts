@@ -7,10 +7,13 @@ import { ToStrictNumber } from '../../../common/utils/strict-boolean';
 
 /**
  * Request shape for GET /search. Numeric fields are coerced from query-string strings via
- * `@Type(() => Number)` and then validated with `@IsNumber()` — so `?limit=abc` (Number('abc') →
- * NaN) fails `@IsNumber()` and surfaces as a 400 from the global ValidationPipe, never reaching the
- * provider as a NaN SQL param. `sessionIds` is intentionally absent: scope is injected by
- * SearchService from the caller's API-key allowedSessions (never user-supplied).
+ * `@Type(() => Number)` and then validated, so `?limit=abc` (Number('abc') → NaN) surfaces as a 400
+ * from the global ValidationPipe, never reaching the provider as a NaN SQL param. The epoch-ms
+ * bounds `dateFrom`/`dateTo` use `@IsNumber()`; `limit`/`offset` use `@IsInt()`, because they are
+ * bound straight into `LIMIT ?`/`OFFSET ?` where better-sqlite3 rejects a fractional value with
+ * SQLITE_MISMATCH: a fraction has to be a 400 here rather than a driver-level 500. `sessionIds` is
+ * intentionally absent: scope is injected by SearchService from the caller's API-key
+ * allowedSessions (never user-supplied).
  */
 export class SearchQueryDto {
   @ApiProperty({ description: 'Search term (required, non-empty)' })
