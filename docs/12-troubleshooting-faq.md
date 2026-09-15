@@ -276,6 +276,14 @@ curl -X POST "$BASE/api/sessions" -H "X-API-Key: $API_KEY" -H "Content-Type: app
 > ℹ️ Proxy egress for the `whatsapp-web.js` engine is configured **per session** via the
 > `proxyUrl`/`proxyType` fields on `POST /api/sessions` — not via environment variables.
 
+> ℹ️ A `504` whose body starts with `Engine initialization timed out after ...` is a **different**
+> failure with a different fix: initialization never finished at all. That happens when WhatsApp Web,
+> the network or the session proxy is unreachable in a way that hangs the connection instead of
+> failing it, and when the browser stalls during startup (typically a container memory or resource
+> limit). Check egress to `web.whatsapp.com`, the session's `proxyUrl` and the container's memory
+> limit. The auth poll that produces the message above only starts once the page has loaded, so it
+> never fires for a connection that hangs before that.
+
 ### Issue: Session stuck at `authenticating`, never reaches `ready`
 
 > **Engine:** This stall applies to the `whatsapp-web.js` engine only. Baileys also reports `authenticating`, but only for the seconds between WhatsApp accepting the link and the restart it requests; it cannot park there, so if you are using `ENGINE_TYPE=baileys`, skip this section.

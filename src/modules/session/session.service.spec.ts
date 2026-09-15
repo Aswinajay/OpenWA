@@ -1820,7 +1820,19 @@ describe('SessionService', () => {
         // runs inside initializeEngine before the mapped error is thrown — asserted below.
         expect(caught).toBeInstanceOf(HttpException);
         expect((caught as HttpException).getStatus()).toBe(HttpStatus.GATEWAY_TIMEOUT);
-        expect((caught as HttpException).getResponse() as string).toMatch(/timed out after 60000ms/i);
+        const body = (caught as HttpException).getResponse() as string;
+        expect(body).toMatch(/timed out after 60000ms/i);
+        // This deadline cannot tell an unreachable WhatsApp Web or session proxy from a stalled browser:
+        // whatsapp-web.js navigates with { waitUntil: 'load', timeout: 0 } and only starts its auth poll
+        // after the page has loaded, so a navigation that hangs fires this timeout, not the auth one. The
+        // diagnostic must name every cause and rule out none, or it points the operator away from the
+        // network. It must also blame the ENGINE, not the browser: the deadline is engine-agnostic, and a
+        // hung navigation means the browser started fine.
+        expect(body).toMatch(/the engine did not finish starting/i);
+        expect(body).not.toMatch(/browser did not finish starting/i);
+        expect(body).toMatch(/WhatsApp Web, the network or the session proxy may be unreachable/i);
+        expect(body).toMatch(/may have stalled during startup/i);
+        expect(body).not.toMatch(/not a network/i);
         expect(mockEngine.forceDestroy).toHaveBeenCalled(); // wedged browser reaped
         expect(intern().engines.has('sess-uuid-1')).toBe(false); // slot freed for retry
         expect(repository.update).toHaveBeenCalledWith('sess-uuid-1', { status: SessionStatus.DISCONNECTED });

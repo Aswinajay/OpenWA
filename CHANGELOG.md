@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dashboard Webhooks Configured card shows a placeholder instead of 0 when the webhook list cannot be read.
 - Dashboard message search ignores a response that arrives after a newer query, so stale results no longer replace the current ones.
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
+- The `504` a start returns when the engine does not finish initializing names every possible cause, an unreachable WhatsApp Web, network or session proxy and a browser stalled during startup, instead of ruling the network out ([#1601](https://github.com/rmyndharis/OpenWA/issues/1601)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
 - A session that runs out of reconnect attempts keeps the last attempt's failure reason in `lastError` and in the `session:error` hook, after the attempts message.
 - A stop during the retry delay after a transient start failure is no longer undone by the retry; a stop or delete the ownership fence refused leaves the retry alone.
