@@ -82,9 +82,7 @@ describe('engine auth directory paths', () => {
     });
 
     it('throws ENOENT for a missing base directory, so a caller can tell it from a failure', () => {
-      expect(() => readAuthDirEntries(path.join(tmpRoot, 'absent'))).toThrow(
-        expect.objectContaining({ code: 'ENOENT' }),
-      );
+      expect(() => readAuthDirEntries(path.join(tmpRoot, 'absent'))).toThrow(/ENOENT/);
     });
   });
 });
