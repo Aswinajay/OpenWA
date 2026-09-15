@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A request forwarded to the node that owns its session answers `504` or `502`, not `503`, when the forward times out or breaks after the request was sent, so a client retrying on `503` no longer repeats a send the owner may have carried out; `503` remains for an owner that could not be reached at all.
+- The dashboard Logs page and its sidebar entry are shown to admin keys only, matching the ADMIN-only `GET /api/audit` it reads.
+- The dashboard Sessions page hides Show QR for viewer keys, since the QR is operator-only.
+- The dashboard Sessions page re-reads the session list once live updates connect after a failed initial load, instead of keeping the error until a reload.
+- The dashboard Templates page shows a load or permission error when the template list cannot be read, instead of "No templates saved".
+- The dashboard Webhooks Configured card shows a placeholder instead of 0 when the webhook list cannot be read.
+- Dashboard message search ignores a response that arrives after a newer query, so stale results no longer replace the current ones.
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
 - A session that runs out of reconnect attempts keeps the last attempt's failure reason in `lastError` and in the `session:error` hook, after the attempts message.
