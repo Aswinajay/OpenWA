@@ -1713,7 +1713,7 @@ Render a stored text template (header/body/footer joined by blank lines, `{{vars
 
 Delegates to the send-text path after rendering.
 
-**Errors:** `400` unknown body field, validation failure, or session not active · `401` missing/invalid API key · `403` key role below OPERATOR · `404` session or template not found · `500` engine error · `409` conflict or engine not ready (retryable)
+**Errors:** `400` unknown body field, validation failure, neither `templateId` nor `templateName` given, or session not active · `401` missing/invalid API key · `403` key role below OPERATOR · `404` session or template not found · `500` engine error · `409` conflict or engine not ready (retryable)
 
 #### POST /api/sessions/:sessionId/messages/send-image
 
@@ -2170,6 +2170,8 @@ Send messages to multiple recipients as an async batch — returns immediately a
 Each `BulkMessageItemDto`: `{ chatId: string, type: 'text'|'image'|'video'|'audio'|'document', content: BulkMessageContentDto, variables?: Record<string,string> }`. `content` (all fields optional, nested-validated): `text?: string`, `image?`/`video?`/`audio?`/`document?`: `{ url?, base64?, mimetype?, filename? }`, `caption?: string`, `mentions?: string[]` (per item; a batch fans out to many chats, and a WID is only taggable in a chat the participant is in).
 
 `BulkMessageOptionsDto`: `{ delayBetweenMessages?: number (1000–60000, default 3000), randomizeDelay?: boolean (default true), stopOnError?: boolean (default false) }`.
+
+Each item must carry what its `type` sends: a non-empty `chatId`, a non-empty `content.text` for `text`, and a `url` or `base64` under `content.<type>` for a media type. If any item does not, the request answers `400` and nothing is queued. The check runs again per item after `variables` and the `message:sending` gate, where a failure fails that item only.
 
 Each item's base64 media is checked against the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`) twice: at batch creation, and again per item after `variables` and the `message:sending` plugin gate are applied. An item that outgrows the cap only after rendering fails individually (`failed` in `results`, with `message:failed` fired) instead of being sent. `totalMessages` in the response reflects the de-duplicated item count.
 
@@ -3367,8 +3369,8 @@ Update a template's name/body/header/footer (partial; only provided fields chang
 
 | Field  | Type   | Required | Constraints                           | Description                                                                                                                                                         |
 | ------ | ------ | -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| name   | string | no       | if present: non-empty, max 100 chars  | Applied only when not `undefined`. Duplicate name → `409`.                                                                                                          |
-| body   | string | no       | if present: non-empty, max 4096 chars | Applied only when not `undefined`.                                                                                                                                  |
+| name   | string | no       | if present: non-empty, max 100 chars  | Applied only when not `undefined`; explicit `null` → `400`. Duplicate name → `409`.                                                                                 |
+| body   | string | no       | if present: non-empty, max 4096 chars | Applied only when not `undefined`; explicit `null` → `400`.                                                                                                         |
 | header | string | no       | max 1024 chars                        | Applied only when not `undefined`. The update path does **not** coerce to `null`, so passing explicit `null` fails `@IsString`; omit the key to leave it unchanged. |
 | footer | string | no       | max 1024 chars                        | Applied only when not `undefined`.                                                                                                                                  |
 
@@ -3936,13 +3938,14 @@ Create or update a label.
 
 The label id is **yours to choose** and travels in the path. Whether this creates or updates depends
 only on whether that id already exists — reusing one rewrites that label rather than failing.
-Omitted fields are left as they are.
+The write replaces the whole label, so send every field it should keep: an omitted name or colour
+is not preserved.
 
 **Request body** — `UpsertLabelDto`
 
 | Field   | Type   | Required | Constraints  | Description                                  |
 | ------- | ------ | -------- | ------------ | -------------------------------------------- |
-| `name`  | string | No       | 1–100 chars  | Omit to keep the current name                |
+| `name`  | string | No       | 1–100 chars  | Not preserved when omitted                   |
 | `color` | number | No       | integer 0–19 | WhatsApp's colour **index**, not a hex value |
 
 `color` deliberately does not round-trip with the `hexColor` the read routes return: neither engine
@@ -5444,7 +5447,7 @@ Request a graceful server restart, optionally orchestrating Docker profiles (add
 
 #### GET /api/infra/export-data
 
-Export every row of the 14 migration tables from the Data DB as JSON. Read-only, but runs raw `SELECT *` on the `data` DataSource.
+Export every row of the 16 migration tables from the Data DB as JSON. Read-only, but runs raw `SELECT *` on the `data` DataSource.
 
 **Auth:** API key (ADMIN)
 
@@ -5454,7 +5457,7 @@ Export every row of the 14 migration tables from the Data DB as JSON. Read-only,
 >
 > This bounds the media, not the export — a large enough text-only history still exceeds the import limit, because every row costs a few hundred bytes of scaffolding whatever was said. For a backup that keeps everything, use `scripts/backup.sh`: it snapshots the database file itself (and `pg_dump`s Postgres), so inline media rides along regardless of this budget.
 
-The migration set (`MigrationTables`) is, in payload-key order: `sessions`, `webhooks`, `messages`, `messageBatches`, `templates`, `baileysStoredMessages`, `lidMappings`, `pluginInstances`, `conversationMappings`, `ingressEvents`, `webhookDeliveryFailures`, `integrationDeliveryFailures`, `statusUpdates`, `automationRules`.
+The migration set (`MigrationTables`) is, in payload-key order: `sessions`, `webhooks`, `messages`, `messageBatches`, `templates`, `baileysStoredMessages`, `lidMappings`, `chatStates`, `pluginInstances`, `conversationMappings`, `ingressEvents`, `webhookDeliveryFailures`, `webhookOutboxEvents`, `integrationDeliveryFailures`, `statusUpdates`, `automationRules`.
 
 **Response** `200`
 
@@ -5525,7 +5528,7 @@ Rows are raw DB column shapes (e.g. `messageBatches` rows use snake_case columns
 
 Replace all Data DB rows with the supplied export. **Destructive and transactional (all-or-nothing).**
 
-> **The replace covers all 14 migration tables, not just the ones you send.** Inside the transaction every table in the migration set is emptied first and only then re-populated from the payload, so a table you omit ends up **empty**, not untouched. Always restore a payload produced by `GET /api/infra/export-data` of the same or a newer build — a hand-built body carrying only a subset silently wipes the rest.
+> **The replace covers all 16 migration tables, not just the ones you send.** Inside the transaction every table in the migration set is emptied first and only then re-populated from the payload, so a table you omit ends up **empty**, not untouched. Always restore a payload produced by `GET /api/infra/export-data` of the same or a newer build — a hand-built body carrying only a subset silently wipes the rest.
 
 **Auth:** API key (ADMIN)
 
@@ -6158,8 +6161,8 @@ Search messages across sessions (active search provider).
 | `from`      | string                          | No       | —       | Filter by sender.                                                                                                                                                                             |
 | `dateFrom`  | integer (epoch ms)              | No       | —       | Inclusive lower bound on `timestamp`. A non-numeric value is rejected with `400`.                                                                                                             |
 | `dateTo`    | integer (epoch ms)              | No       | —       | Inclusive upper bound on `timestamp`. A non-numeric value is rejected with `400`.                                                                                                             |
-| `limit`     | integer (≥ 1)                   | No       | `50`    | Max hits to return. Clamped to `SEARCH_LIMIT_MAX` (default `100`). A non-numeric value is rejected with `400`.                                                                                |
-| `offset`    | integer (≥ 0)                   | No       | `0`     | Pagination offset. A non-numeric value is rejected with `400`.                                                                                                                                |
+| `limit`     | integer (≥ 1)                   | No       | `50`    | Max hits to return. Clamped to `SEARCH_LIMIT_MAX` (default `100`). A non-integer value is rejected with `400`.                                                                                |
+| `offset`    | integer (≥ 0)                   | No       | `0`     | Pagination offset. A non-integer value is rejected with `400`.                                                                                                                                |
 
 **Response** `200` — `SearchResults`
 
@@ -6765,6 +6768,7 @@ A subscribe request whose `events` array contains no recognized name (after filt
 - **`sessionId: "*"`** subscribes to every session; **`events: ["*"]`** subscribes to every subscribable event. They combine (e.g. `"*"` + `["*"]` = every event of every session).
 - The API key is **re-validated on every `subscribe`** (not just at connect), so a key revoked or expired mid-connection is caught — the server replies `UNAUTHORIZED` and disconnects.
 - **Per-key session scope is enforced** against the fresh key: a key restricted via `allowedSessions` may NOT subscribe to `"*"` and may NOT subscribe to a session outside its allowlist — either is rejected with `FORBIDDEN_SESSION`. An unrestricted key (no `allowedSessions`) may subscribe to anything, including `"*"`.
+- **`session.qr` requires the OPERATOR role**, matching `GET /api/sessions/{sessionId}/qr`. A VIEWER key may still subscribe to it, by name or through a wildcard, but the QR is never delivered to its sockets; every other event is. The role is read from the key re-validated on each `subscribe`, so a key narrowed to VIEWER stops receiving the QR from its next `subscribe` (a role change also disconnects the key's sockets).
 
 ### Example (socket.io-client)
 
@@ -6859,7 +6863,7 @@ Webhook delivery is **at-least-once**. A consumer can legitimately receive the s
 - The underlying WhatsApp engine can re-fire an event for a single message.
 - A failed delivery (non-2xx response, timeout, or network error) is retried.
 
-**Crash boundary.** Every delivery is recorded before it is attempted, and the record is retired once something durable owns it: the queue job in queued mode, the completed send in direct mode. A hard crash (SIGKILL, OOM) therefore leaves the record behind, and a bounded sweep (`WEBHOOK_RECONCILE_INTERVAL_MS`, default 60s) replays whatever is still stranded, reusing the stored `X-OpenWA-Idempotency-Key` so the retry stays deduplicable at your receiver. A delivery that keeps failing exhausts `WEBHOOK_RECONCILE_MAX_ATTEMPTS` and goes terminal rather than replaying forever. One window remains open: a crash between persisting the message and writing that record loses the delivery, because the two are not yet one transaction. The failure table records exhausted retries, plus over-budget, dispatch-capacity-exceeded, and shutdown-rejected deliveries with attempts 0. Read the last two as a report rather than a verdict: a delivery the dispatcher shed for capacity or refused during the drain keeps its record and is replayed by the same sweep, so a row there can belong to an event that was later delivered. Enabling the queue (`QUEUE_ENABLED=true`, needs Redis) makes the dispatch durable from the enqueue onward. In both modes, a graceful shutdown drains in-flight deliveries first: the queued path waits for each worker's current job, and the direct path waits up to `WEBHOOK_SHUTDOWN_DRAIN_MS` (default 5s; raise it to at least `WEBHOOK_TIMEOUT`, default 10s, if a slow receiver must finish).
+**Crash boundary.** Every delivery is recorded before it is attempted, and the record is retired once something durable owns it: the queue job in queued mode, the completed send in direct mode. A hard crash (SIGKILL, OOM) therefore leaves the record behind, and a bounded sweep (`WEBHOOK_RECONCILE_INTERVAL_MS`, default 60s) replays whatever is still stranded, reusing the stored `X-OpenWA-Idempotency-Key` so the retry stays deduplicable at your receiver. A delivery that keeps failing exhausts `WEBHOOK_RECONCILE_MAX_ATTEMPTS` and goes terminal rather than replaying forever. One window remains open: a crash between persisting the message and writing that record loses the delivery, because the two are not yet one transaction. The failure table records exhausted retries, plus over-budget, dispatch-capacity-exceeded, and shutdown-rejected deliveries with attempts 0. A delivery the dispatcher shed for capacity or refused during the drain is not replayed: its failure row is the only record, so recover it from there. A node's sweep also leaves alone a delivery that the same node is still waiting to dispatch or retrying, however long that takes; with several nodes on one database, another node can still replay it, and the stored idempotency key keeps that duplicate deduplicable. Enabling the queue (`QUEUE_ENABLED=true`, needs Redis) makes the dispatch durable from the enqueue onward. In both modes, a graceful shutdown drains in-flight deliveries first: the queued path waits for each worker's current job, and the direct path waits up to `WEBHOOK_SHUTDOWN_DRAIN_MS` (default 5s; raise it to at least `WEBHOOK_TIMEOUT`, default 10s, if a slow receiver must finish).
 
 **Design your handler to be idempotent**, keyed on the `X-OpenWA-Idempotency-Key` header (see below). As a server-side safety net, OpenWA de-duplicates inbound `message.received` before dispatch (a re-fired event for an already-persisted message is dropped), so one webhook normally sees each inbound message once — but this is best-effort defense-in-depth and does not remove the need for consumer-side idempotency.
 
@@ -6908,6 +6912,7 @@ Every delivery includes:
 - `session.status`: `sess_{sessionId}_{status}_{occurredAt}`
 - `session.authenticated`: `auth_{sessionId}_{hash(data)}_{occurredAt}`
 - `session.disconnected`: `disc_{sessionId}_{hash(reason)}_{occurredAt}`
+- `session.reconnect_loop`: `loop_{sessionId}_{attempts}_{occurredAt}`
 - `group.join` / `group.leave`: `grp_{groupId}_{hash(participantIds)}_{join|leave}_{occurredAt}`
 - `group.update`: `grp_{groupId}_update_{hash(changes)}_{occurredAt}`
 - `group.join_request`: `grp_{groupId}_{hash(participantIds)}_join_request_{occurredAt}` (salted like `group.join` — a rejected user can legitimately ask again)
