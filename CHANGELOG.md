@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The amd64 image ships Chrome for Testing 153.0.8010.36 instead of 146.0.7680.31, picking up the browser security fixes released since (the arm64 image uses the Debian chromium package).
 - The `session.qr` WebSocket event reaches only OPERATOR and ADMIN keys, matching `GET /api/sessions/{sessionId}/qr`; a VIEWER key subscribed by name or through a wildcard no longer receives the pairing QR.
 - An integration ingress route verified with `shared-secret` no longer stores the instance secret from its declared header; the value is redacted in the persisted event, the queued job, the dead-letter row and the `ingress:error` hook payload.
-- Baileys sessions with an HTTP, HTTPS or SOCKS5 proxy download inbound media through the proxy instead of connecting direct, and look up the WhatsApp Web version through it instead of always falling back; with a SOCKS4 proxy both are skipped, and inbound media arrives as the omitted marker.
+- Baileys sessions with an HTTP, HTTPS or SOCKS5 proxy fetch through the proxy instead of connecting direct: inbound media, the WhatsApp Web version lookup, the history-sync and app-state payloads of the initial sync, and a product card's image URL. With a SOCKS4 proxy, which the HTTP client cannot use, inbound media is skipped and arrives as the omitted marker, the version lookup falls back to the bundled version, and the initial-sync payloads and product image are still fetched directly.
 
 ### Added
 
@@ -64,7 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/sessions/:sessionId/presence/:chatId` returns `null` once the session has no running engine, instead of the last presence reported before a stop, logout, force-kill or failure.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so a limit above about 6 attempts was never reached and the documented 1-hour cap never applied.
 - The webhook delivery reconciler no longer replays a delivery that is still waiting for a dispatch slot or retrying on the node that dispatched it, which sent a duplicate outside `WEBHOOK_DISPATCH_CONCURRENCY` and could close a slow delivery as failed while it was still running.
-- A webhook delivery shed at `WEBHOOK_DISPATCH_MAX_QUEUED` or refused during shutdown is no longer replayed by the delivery reconciler, so its delivery-failure row no longer reports an event that was delivered after all.
 - `session.reconnect_loop` webhooks carry an idempotency key salted per occurrence, so an alert from a later outage that reaches the same attempt count is no longer deduplicated onto the earlier one or left without a delivery record.
 - A bulk batch sends each message through the session's current engine, so a reconnect or restart mid-batch no longer fails every remaining message.
 - `POST /messages/send-bulk` answers 400 for an item with an empty `chatId`, a text item without text, or a media item without a `url` or `base64` under its type; such items used to be accepted with 202 and fail later.
