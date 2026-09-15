@@ -147,6 +147,29 @@ describe('StorageService put/getFile containment is backend-agnostic', () => {
   });
 });
 
+describe('StorageService.openFile (the export read path)', () => {
+  const readAll = async (stream: Readable): Promise<Buffer> => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(chunk as Buffer);
+    return Buffer.concat(chunks);
+  };
+
+  it('streams a local file with its size, and rejects a missing file before any stream exists', async () => {
+    const { service, baseDir, localPath } = makeLocalService();
+    fs.mkdirSync(path.join(localPath, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(localPath, 'sub/a.bin'), 'local-bytes');
+
+    const { stream, size } = await service.openFile('sub/a.bin');
+    expect(size).toBe(11);
+    expect((await readAll(stream)).toString()).toBe('local-bytes');
+    expect((await service.getFile('sub/a.bin')).toString()).toBe('local-bytes');
+    await expect(service.openFile('sub/missing.bin')).rejects.toThrow(/ENOENT/);
+    await expect(service.openFile('../../etc/passwd')).rejects.toThrow(/unsafe storage key/);
+
+    fs.rmSync(baseDir, { recursive: true, force: true });
+  });
+});
+
 describe('StorageService getFileCount (S3 size)', () => {
   it('sums the real Size of each S3 object instead of estimating', async () => {
     const { service, baseDir } = makeLocalService();
