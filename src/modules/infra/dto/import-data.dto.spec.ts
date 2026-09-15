@@ -53,6 +53,32 @@ function exportEnvelope(): Record<string, unknown> {
   };
 }
 
+/**
+ * The keys of every `"tables"` / `"counts"` object a document prints, one set per object. Matched by
+ * brace counting rather than by slicing code fences: docs/06 prints the export payload's `tables`
+ * and `counts` inside a single block, and a union of both would let a key missing from one hide
+ * behind the other. Only depth-1 keys count, so a sample row's own fields (`id`, `name`, …) cannot
+ * stand in for a table.
+ */
+function tableContainers(doc: string): Set<string>[] {
+  const containers: Set<string>[] = [];
+  for (const opener of doc.matchAll(/"(?:tables|counts)":\s*\{/g)) {
+    const keys = new Set<string>();
+    let depth = 1;
+    for (let i = (opener.index ?? 0) + opener[0].length; i < doc.length && depth > 0; i++) {
+      const char = doc[i];
+      if (char === '{' || char === '[') depth++;
+      else if (char === '}' || char === ']') depth--;
+      else if (depth === 1 && char === '"') {
+        const key = /^"(\w+)":/.exec(doc.slice(i, i + 64));
+        if (key) keys.add(key[1]);
+      }
+    }
+    containers.push(keys);
+  }
+  return containers;
+}
+
 describe('ImportDataDto', () => {
   it('publishes the table count the restore actually clears', () => {
     const snapshot = JSON.parse(readFileSync(join(__dirname, '..', '..', '..', '..', 'openapi.json'), 'utf8')) as {
@@ -64,25 +90,25 @@ describe('ImportDataDto', () => {
 
   /**
    * The restore empties every migration table before repopulating, so a key missing from a
-   * documented body is a table the operator who copies that body wipes. The registry has already
-   * grown twice while the examples stayed behind, so every block a reader can copy is pinned to it.
+   * documented body is a table the operator who copies that body wipes, and a `counts` block a
+   * reader diffs against a real response is as misleading as the body itself. The registry has
+   * already grown twice while the examples stayed behind, so every block on every page that prints
+   * one is pinned to it: the export payload, the import request body and both `counts` responses.
    */
-  it.each(['docs/06-api-specification.md', 'docs/07-api-collection.md'])(
-    'the %s import-data example shows every table the importer restores',
-    file => {
-      const doc = readFileSync(join(__dirname, '..', '..', '..', '..', ...file.split('/')), 'utf8');
-      const heading = doc.indexOf('#### POST /api/infra/import-data');
-      const section = doc.slice(heading, doc.indexOf('\n#### ', heading + 1));
-      // Odd-indexed pieces of a fence split are the code blocks; the request body is the one that
-      // carries a `tables` container, in whichever language the page writes its examples.
-      const bodies = section.split('```').filter((piece, index) => index % 2 === 1 && piece.includes('"tables"'));
-      expect(bodies).not.toHaveLength(0);
-      for (const body of bodies) {
-        const shown = new Set([...body.matchAll(/"(\w+)":/g)].map(match => match[1]));
-        expect(TABLE_IMPORTERS.map(importer => importer.key).filter(key => !shown.has(key))).toEqual([]);
-      }
-    },
-  );
+  it.each<[string, number]>([
+    ['docs/06-api-specification.md', 4],
+    ['docs/07-api-collection.md', 1],
+    ['docs/14-migration-guide.md', 2],
+  ])('every %s migration-table example shows every table the importer restores', (file, expected) => {
+    const doc = readFileSync(join(__dirname, '..', '..', '..', '..', ...file.split('/')), 'utf8');
+    const containers = tableContainers(doc);
+    // The count is the control: a container that stops being recognised would otherwise fall out of
+    // the pin in silence, which is the drift this case exists to catch.
+    expect(containers).toHaveLength(expected);
+    for (const shown of containers) {
+      expect(TABLE_IMPORTERS.map(importer => importer.key).filter(key => !shown.has(key))).toEqual([]);
+    }
+  });
 
   it('rejects a body with no tables, naming the field', async () => {
     const { errors } = await run({ force: true });
