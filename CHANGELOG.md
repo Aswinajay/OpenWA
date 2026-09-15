@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The `session.qr` WebSocket event reaches only OPERATOR and ADMIN keys, matching `GET /api/sessions/{sessionId}/qr`; a VIEWER key subscribed by name or through a wildcard no longer receives the pairing QR.
+- An integration ingress route verified with `shared-secret` no longer stores the instance secret from its declared header; the value is redacted in the persisted event, the queued job, the dead-letter row and the `ingress:error` hook payload.
+
 ### Added
 
 - `GET /api/sessions` accepts a `name` query parameter that returns only the session with that exact name, also on the MCP `SessionFindAll` tool and the JavaScript, Python, Go, Java and PHP SDKs ([#1594](https://github.com/rmyndharis/OpenWA/issues/1594)). Thanks @rivenash.
@@ -19,7 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
+- A session that runs out of reconnect attempts keeps the last attempt's failure reason in `lastError` and in the `session:error` hook, after the attempts message.
+- A stop during the retry delay after a transient start failure is no longer undone by the retry.
+- In a multi-node deployment, a start cut short by a concurrent stop releases its claim, so a peer no longer adopts and restarts the stopped session.
+- A stop or delete that fails on a database error no longer blocks the session's next automatic reconnect or makes a later start answer "already started".
+- A logout or force-kill refused as "not started" leaves the session's claim untouched, so a crashed node's session stays visible to the takeover sweep.
+- `GET /api/sessions/:sessionId/presence/:chatId` returns `null` once the session has no running engine, instead of the last presence reported before a stop, logout, force-kill or failure.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
+- The webhook delivery reconciler no longer replays a delivery that is still waiting for a dispatch slot or retrying on the node that dispatched it, which sent a duplicate outside `WEBHOOK_DISPATCH_CONCURRENCY` and could close a slow delivery as failed while it was still running.
+- A webhook delivery shed at `WEBHOOK_DISPATCH_MAX_QUEUED` or refused during shutdown is no longer replayed by the delivery reconciler, so its delivery-failure row no longer reports an event that was delivered after all.
+- `session.reconnect_loop` webhooks carry an idempotency key salted per occurrence, so an alert from a later outage that reaches the same attempt count is no longer deduplicated onto the earlier one or left without a delivery record.
+- A bulk batch sends each message through the session's current engine, so a reconnect or restart mid-batch no longer fails every remaining message.
+- `POST /messages/send-bulk` answers 400 for an item with an empty `chatId`, a text item without text, or a media item without a `url` or `base64` under its type; such items used to be accepted with 202 and fail later.
+- `POST /messages/send-bulk` answers 400, not 500, when a concurrent request already created the same `batchId`.
+- `PUT /templates/:id` answers 400, not 500, for a `null` `name` or `body`.
+- `GET /api/search` answers 400, not 500, for a fractional `limit` or `offset`.
+- `POST /messages/send-template` without `templateId` or `templateName` answers 400 instead of 404.
+- The label upsert documentation no longer says omitted fields are kept: the write replaces the whole label, so an omitted name or colour is not preserved.
 - Restoring a PostgreSQL backup into SQLite stores creation and update timestamps in SQLite's own format, so restored pending webhook deliveries and ingress events are replayed on the day they were created instead of from the next UTC day.
 - The `POST /api/infra/import-data` schema and the API docs state 16 migration tables, including the `chatStates` and `webhookOutboxEvents` keys the restore already clears.
 
