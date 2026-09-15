@@ -133,6 +133,7 @@ export class BaileysAdapter implements IWhatsAppEngine {
       toNeutralJid: jid => this.sessionStore.toNeutralJid(jid),
       normalizedSelfJid: () => this.normalizedSelfJid(),
       loadLib: () => this.loadLib(),
+      getFetchDispatcher: () => this.lifecycle.fetchDispatcher(),
       toUnixSeconds,
       inboundLimiter: this.inboundLimiter,
       recordKeyLidMappings: key => this.sessionStore.recordKeyLidMappings(key),

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The `session.qr` WebSocket event reaches only OPERATOR and ADMIN keys, matching `GET /api/sessions/{sessionId}/qr`; a VIEWER key subscribed by name or through a wildcard no longer receives the pairing QR.
 - An integration ingress route verified with `shared-secret` no longer stores the instance secret from its declared header; the value is redacted in the persisted event, the queued job, the dead-letter row and the `ingress:error` hook payload.
+- Baileys sessions with an HTTP, HTTPS or SOCKS5 proxy download inbound media through the proxy instead of connecting direct, and look up the WhatsApp Web version through it instead of always falling back; with a SOCKS4 proxy both are skipped, and inbound media arrives as the omitted marker.
 
 ### Added
 
@@ -44,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restoring a PostgreSQL backup into SQLite stores creation and update timestamps in SQLite's own format, so restored pending webhook deliveries and ingress events are replayed on the day they were created instead of from the next UTC day.
 - The `POST /api/infra/import-data` schema and the API docs state 16 migration tables, including the `chatStates` and `webhookOutboxEvents` keys the restore already clears.
 - `GET /api/infra/storage/export` streams files into the archive one at a time instead of loading the whole media store into memory first, so exporting a large local or S3 store no longer exhausts memory.
+- A Baileys session behind an HTTP(S) proxy that never answers CONNECT no longer leaves an open connection to the proxy on every reconnect attempt.
+- A Baileys inbound media download that passes `MEDIA_DOWNLOAD_TIMEOUT_MS` before its stream opens stops instead of buffering in the background outside `INBOUND_MEDIA_CONCURRENCY`.
 
 ## [0.23.5] - 2026-09-14
 

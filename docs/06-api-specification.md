@@ -551,6 +551,11 @@ network cannot reach WhatsApp directly. Set `proxyUrl`/`proxyType` on the same r
 > WebSocket never connects, **no QR code is ever delivered**, and `POST /api/sessions/:sessionId/start`
 > returns `504 Gateway Timeout` after ~30s. Leave `proxyUrl` unset unless you genuinely need a proxy.
 
+On the Baileys engine a `socks4` proxy carries the WebSocket and media uploads only: inbound media is not
+downloaded (it arrives as the omitted marker) and the WhatsApp Web version is not looked up remotely, so
+neither can leave outside the proxy. With `socks5`, `http` or `https` both also go through the proxy. Fetches
+of a URL you pass in, such as a catalog product `imageUrl` or an opt-in link preview, still connect directly.
+
 **Response** `201`
 
 ```json
