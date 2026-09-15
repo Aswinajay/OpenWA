@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A session whose automatic reconnect fails to relaunch the engine (a network, DNS or browser launch error) keeps retrying with backoff instead of stopping in `failed` until restarted by hand; an authentication failure or a stale browser profile still ends in `failed` ([#1580](https://github.com/rmyndharis/OpenWA/issues/1580)).
 - A session that runs out of reconnect attempts fires the `session:error` plugin hook when it lands in `failed`.
+- A session that runs out of reconnect attempts keeps the last attempt's failure reason in `lastError` and in the `session:error` hook, after the attempts message.
+- A stop during the retry delay after a transient start failure is no longer undone by the retry.
+- In a multi-node deployment, a start cut short by a concurrent stop releases its claim, so a peer no longer adopts and restarts the stopped session.
+- A stop or delete that fails on a database error no longer blocks the session's next automatic reconnect or makes a later start answer "already started".
+- A logout or force-kill refused as "not started" leaves the session's claim untouched, so a crashed node's session stays visible to the takeover sweep.
+- `GET /api/sessions/:sessionId/presence/:chatId` returns `null` once the session has no running engine, instead of the last presence reported before a stop, logout, force-kill or failure.
 - An explicit `maxReconnectAttempts` is honoured and the reconnect delay is capped at 5 minutes; the budget used to restart once the backoff passed 5 minutes, so the limit was never reached and the documented 1-hour cap never applied.
 
 ## [0.23.5] - 2026-09-14
