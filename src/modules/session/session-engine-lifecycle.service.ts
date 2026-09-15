@@ -218,15 +218,16 @@ export class SessionEngineLifecycle {
   }
 
   // Destructive credential-teardown promises (logout rms of the session's on-disk WhatsApp auth
-  // dir), keyed by session NAME — the on-disk auth-dir key (EngineFactory.wwjsAuthDir/baileysAuthDir
-  // and adapter clearLocalAuth all build the path from Session.name), NOT the UUID. A losing
-  // logout() promise keeps running past its deadline race and ends in an fs.rm of that dir — the
-  // same path a later start() under the SAME name re-creates — so start()/delete()/executeReconnect
-  // consult this map and wait (bounded, fail-closed) for settlement before touching that path. After
-  // an old UUID's session is deleted and the name is recreated, a late logout from the old UUID
-  // still targets the new session's dir (same name → same path), so keying by name keeps the fence
-  // attached to the credential path that is actually at risk. Entries self-remove on settlement
-  // (identity-checked); nothing else evicts them (delete()'s finally no longer drops them).
+  // dir), keyed by session NAME. A losing logout() promise keeps running past its deadline race and
+  // ends in an fs.rm of that dir — the same path a later start() re-creates — so
+  // start()/delete()/executeReconnect consult this map and wait (bounded, fail-closed) for
+  // settlement before touching that path. The dirs themselves are keyed by Session.id (#1597), and
+  // the name is unique, so for a live row the two keys are 1:1 and the name fence covers exactly the
+  // id's path; across a delete and a recreate under the same name it merely holds the new session
+  // back a little longer than strictly needed, which is the safe direction. The name is also what
+  // the public refusal code (SESSION_NAME_TEARDOWN_PENDING) is documented against. Entries
+  // self-remove on settlement (identity-checked); nothing else evicts them (delete()'s finally no
+  // longer drops them).
   private readonly pendingTeardowns = new Map<string, Promise<void>>();
 
   // The in-flight `updateStatus(INITIALIZING)` write keyed by id, carrying the EXACT engine it
@@ -376,7 +377,7 @@ export class SessionEngineLifecycle {
       cancelReconnect: id => this.cancelReconnect(id),
       initializeEngine: (id, session) => this.initializeEngine(id, session),
       isSessionRetired: id => this.isSessionRetired(id),
-      purgeAuthDirsIfDeleted: (id, name) => this.purgeAuthDirsIfDeleted(id, name),
+      purgeAuthDirsIfDeleted: id => this.purgeAuthDirsIfDeleted(id),
       updateStatus: (id, status) => this.updateStatus(id, status),
       stoppingSessions: this.stoppingSessions,
       reconnectStates: this.reconnectStates,
@@ -567,8 +568,11 @@ export class SessionEngineLifecycle {
       proxyEnabled: !!session.proxyUrl,
     });
 
+    // The engine is keyed by the session UUID, not its name: names are unique case-sensitively, so
+    // two rows differing only in case shared one auth directory on a case-insensitive filesystem
+    // (#1597). SessionAuthDirMigration renames the legacy name-keyed directories at boot.
     const engine = this.engineFactory.create({
-      sessionId: session.name,
+      sessionId: id,
       dbSessionId: id,
       proxyUrl: session.proxyUrl || undefined,
       proxyType: session.proxyType || undefined,
@@ -1082,17 +1086,16 @@ export class SessionEngineLifecycle {
    * engine eviction and its row removal initializes a fresh engine that RE-CREATES the auth dir
    * purgeSessionData just emptied (both engines mkdir at init); the post-init guard tears the engine
    * down, but engine teardown never touches the on-disk dirs, so without this second purge the race
-   * leaves live WhatsApp credentials behind — and a later same-name recreate would silently re-link
-   * them. Gated two ways so ONLY the delete race purges: a stop() retirement still has its row (its
-   * credentials must survive), and a row re-created under the SAME name now owns those dirs, so
-   * purging would wipe the fresh session's link. Best-effort: a failure is logged, never thrown —
-   * the retirement path must still surface the deleted session as NotFound.
+   * leaves live WhatsApp credentials behind on the volume. Gated on the row so ONLY the delete race
+   * purges: a stop() retirement still has its row and its credentials must survive. The dirs are
+   * keyed by the session id, which no recreate can reuse, so a surviving row under the same NAME is
+   * no longer consulted: it owns a different directory. Best-effort: a failure is logged, never
+   * thrown — the retirement path must still surface the deleted session as NotFound.
    */
-  private async purgeAuthDirsIfDeleted(id: string, name: string): Promise<void> {
+  private async purgeAuthDirsIfDeleted(id: string): Promise<void> {
     try {
       if ((await this.sessionRepository.findOne({ where: { id } })) != null) return;
-      if ((await this.sessionRepository.findOne({ where: { name } })) != null) return;
-      await this.engineFactory.purgeSessionData(name);
+      await this.engineFactory.purgeSessionData(id);
     } catch (error) {
       this.logger.warn('Failed to re-purge session auth dirs after a start/delete race', {
         sessionId: id,
@@ -1130,7 +1133,7 @@ export class SessionEngineLifecycle {
       // Credential-teardown fence — BEFORE engineFactory.create (inside initializeEngine). A logout
       // teardown that lost its deadline race is still running and ends in an fs.rm of this session's
       // on-disk profile — the same path initializeEngine is about to populate. Keyed by session NAME
-      // (the auth-dir key) and FAIL CLOSED: a timeout becomes a failed reconnect attempt that is
+      // (see awaitPendingTeardown) and FAIL CLOSED: a timeout becomes a failed reconnect attempt that is
       // rescheduled WITHOUT touching the auth dir (the catch below schedules the next attempt; no
       // engine was created, so there is nothing to evict and no dir to purge).
       await this.awaitPendingTeardown(session.name);
@@ -1170,7 +1173,7 @@ export class SessionEngineLifecycle {
         }
         // Same start/delete window as start()'s post-init guard: this re-init re-created auth dirs
         // delete() had already purged — purge again so no credentials outlive the row.
-        await this.purgeAuthDirsIfDeleted(id, session.name);
+        await this.purgeAuthDirsIfDeleted(id);
         return;
       }
     } catch (error: unknown) {

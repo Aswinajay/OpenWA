@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Engine auth directories are named after the session id instead of the session name, so two sessions whose names differ only in letter case no longer share one WhatsApp login, or wipe each other's, on a case-insensitive filesystem such as macOS APFS, Windows, or a Docker Desktop bind mount of either ([#1597](https://github.com/rmyndharis/OpenWA/issues/1597)). Existing directories are renamed at the first boot after the upgrade.
 - The Baileys live path drops a message made only of sender-key distributions or message-history notices instead of delivering it as a bodyless `unknown` `message.received`; other messages it cannot type still arrive as `unknown` ([#1568](https://github.com/rmyndharis/OpenWA/issues/1568)). Thanks @berodcdev for the report.
 - A Baileys reconnect loop is observable through `lastError` on the session, a `session.reconnect_loop` webhook every fifth attempt and reconnect metrics; a QR left unscanned is not reported as one ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
 - A Baileys connection attempt refused at the WebSocket upgrade is closed and retried instead of leaving the session at `initializing` ([#1546](https://github.com/rmyndharis/OpenWA/issues/1546)). Thanks @OdaiAhmed99 for the report.
@@ -86,6 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Upgrade notes (behavior changes)
 
 - whatsapp-web.js: back up `sessions/` before upgrading. A rollback to an image with an older browser major deletes the stored WhatsApp logins unless `sessions/` is restored from that backup, and a session first paired after the upgrade must be paired again (see `docs/11-operational-runbooks.md`). Baileys sessions are unaffected.
+- Back up `sessions/` and `baileys/` before upgrading. The first boot renames each session's auth directory from the session name to its id; a rollback to 0.23.4 or earlier looks for the name-keyed directory, finds nothing, and starts every session on both engines at a QR code unless both directories are restored from that backup (see `docs/11-operational-runbooks.md`).
+- whatsapp-web.js on a non-container install: confirm no Chromium survived the stop before starting 0.23.5. The orphan sweep matches the session id from this release on, so a browser orphaned by a hard kill of the older version is no longer recognised and would hold the same profile as the one launched next to it.
 - The amd64 image moves from Chrome for Testing 146 to 153, so every amd64 rollback to 0.23.4 or earlier crosses a browser major; the arm64 image runs the chromium Debian ships at build time, whose major can differ between releases.
 - A `LOG_LEVEL` other than `error`, `warn`, `info`, `debug` or `verbose` now stops the boot instead of logging at info.
 - Multi-node deployments run the lapsed-status correction even with `AUTO_START_SESSIONS` off, so every node needs a synced clock and, on PostgreSQL, one time zone without daylight saving (`TZ=UTC` recommended); otherwise live sessions can be marked disconnected (see `docs/13-horizontal-scaling.md`).
