@@ -933,6 +933,26 @@ class WebhookTestResult(TypedDict, total=False):
     error: str
 
 
+class WebhookDeliveryFailure(TypedDict):
+    """A webhook delivery abandoned after every retry, as listed by the delivery-failure log."""
+
+    id: str
+    webhookId: str
+    sessionId: str
+    event: str
+    url: str
+    # The idempotency key the receiver would have deduped on.
+    idempotencyKey: NotRequired[str | None]
+    deliveryId: NotRequired[str | None]
+    # Total attempts made before giving up.
+    attempts: int
+    # Last HTTP status when the failure was a non-2xx response; None for a network or timeout error.
+    lastStatusCode: NotRequired[int | None]
+    lastError: str
+    # ISO timestamp of when the delivery was finally abandoned.
+    createdAt: str
+
+
 # ── Chat ──────────────────────────────────────────────────────────
 
 

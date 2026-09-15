@@ -608,16 +608,16 @@ Resources are accessed as properties on the client (e.g. `client.messages`). All
 
 #### `client.webhooks`
 
-| Method              | Signature                                                 | Description                                                                                                                                                            |
-| ------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_all`          | `list_all(query=None) -> list[WebhookResponse]`           | List webhooks across EVERY session the key can see, not one session's. **OPERATOR**                                                                                    |
-| `delivery_failures` | `delivery_failures(query=None) -> Any`                    | Deliveries that were attempted and failed — the diagnostic for a webhook that stopped arriving. A delivery a smart filter suppressed never reaches this log. **ADMIN** |
-| `list`              | `list(session_id) -> list[WebhookResponse]`               | List webhooks. **OPERATOR**                                                                                                                                            |
-| `get`               | `get(session_id, webhook_id) -> WebhookResponse`          | Get one webhook. **OPERATOR**                                                                                                                                          |
-| `create`            | `create(session_id, body) -> WebhookResponse`             | Create a webhook. **OPERATOR**                                                                                                                                         |
-| `update`            | `update(session_id, webhook_id, body) -> WebhookResponse` | Update a webhook. **OPERATOR**                                                                                                                                         |
-| `delete`            | `delete(session_id, webhook_id) -> None`                  | Delete a webhook. **OPERATOR**                                                                                                                                         |
-| `test`              | `test(session_id, webhook_id) -> WebhookTestResult`       | Send a test delivery. **OPERATOR**                                                                                                                                     |
+| Method              | Signature                                                       | Description                                                                                                                                                            |
+| ------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_all`          | `list_all(query=None) -> list[WebhookResponse]`                 | List webhooks across EVERY session the key can see, not one session's. **OPERATOR**                                                                                    |
+| `delivery_failures` | `delivery_failures(query=None) -> list[WebhookDeliveryFailure]` | Deliveries that were attempted and failed — the diagnostic for a webhook that stopped arriving. A delivery a smart filter suppressed never reaches this log. **ADMIN** |
+| `list`              | `list(session_id) -> list[WebhookResponse]`                     | List webhooks. **OPERATOR**                                                                                                                                            |
+| `get`               | `get(session_id, webhook_id) -> WebhookResponse`                | Get one webhook. **OPERATOR**                                                                                                                                          |
+| `create`            | `create(session_id, body) -> WebhookResponse`                   | Create a webhook. **OPERATOR**                                                                                                                                         |
+| `update`            | `update(session_id, webhook_id, body) -> WebhookResponse`       | Update a webhook. **OPERATOR**                                                                                                                                         |
+| `delete`            | `delete(session_id, webhook_id) -> None`                        | Delete a webhook. **OPERATOR**                                                                                                                                         |
+| `test`              | `test(session_id, webhook_id) -> WebhookTestResult`             | Send a test delivery. **OPERATOR**                                                                                                                                     |
 
 #### `client.labels` _(WhatsApp Business)_
 
