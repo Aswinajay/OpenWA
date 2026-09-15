@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The label upsert documentation no longer says omitted fields are kept: the write replaces the whole label, so an omitted name or colour is not preserved.
 - Restoring a PostgreSQL backup into SQLite stores creation and update timestamps in SQLite's own format, so restored pending webhook deliveries and ingress events are replayed on the day they were created instead of from the next UTC day.
 - The `POST /api/infra/import-data` schema and the API docs state 16 migration tables, including the `chatStates` and `webhookOutboxEvents` keys the restore already clears.
+- `GET /api/infra/storage/export` streams files into the archive one at a time instead of loading the whole media store into memory first, so exporting a large local or S3 store no longer exhausts memory.
 
 ## [0.23.5] - 2026-09-14
 
