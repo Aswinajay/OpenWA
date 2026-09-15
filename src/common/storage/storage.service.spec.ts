@@ -336,10 +336,9 @@ describe('StorageService.createExportStream enumerates the whole store', () => {
     const iterateFiles = jest.spyOn(service, 'iterateFiles').mockImplementation(async function* () {
       yield await Promise.resolve('media/a.bin');
     });
-    jest.spyOn(service, 'getFile').mockResolvedValue(Buffer.from('x'));
-
-    // The enumerator runs before the archive is constructed, so which one was used is settled even
-    // if archiving itself cannot run in this environment. That is the whole claim here.
+    // No read stub: the enumerator runs before the archive is constructed, and `archiver` is mocked
+    // at the top of this file, so the call rejects there and no file is ever opened. Which
+    // enumeration was used is settled by then, and that is the whole claim here.
     await service.createExportStream().catch(() => undefined);
 
     expect(iterateFiles).toHaveBeenCalled();
