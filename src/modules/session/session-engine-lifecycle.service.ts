@@ -636,8 +636,9 @@ export class SessionEngineLifecycle {
     // engine.initialize() launches Chromium and navigates to WhatsApp Web with no internal timeout:
     // whatsapp-web.js calls page.goto(..., { timeout: 0 }) and its web-version-cache fetch has none
     // either. If the browser stalls under container memory pressure (observed in prod: a session
-    // wedged in INITIALIZING with no error logged and GET /sessions/:id/qr 400ing forever), this
-    // await never settles. Race it against a deadline so a wedged init fails fast instead.
+    // wedged in INITIALIZING with no error logged and GET /sessions/:id/qr 400ing forever), or if
+    // WhatsApp Web is simply unreachable so the navigation never completes, this await never settles.
+    // Race it against a deadline so a wedged init fails fast instead.
     //
     // ONLY the timeout case mutates state here. A REAL rejection (e.g. Chromium can't launch) must
     // propagate untouched so start()'s catch keeps owning FAILED+reason (the diagnosability #600/#631
@@ -681,12 +682,18 @@ export class SessionEngineLifecycle {
         await this.teardownEngineSafely(id, engine, e => e.forceDestroy(), 'force-destroy');
         await this.updateStatus(id, SessionStatus.DISCONNECTED);
         // Map to a diagnostic 504 like the auth-timeout branch below, so a wedged init doesn't escape as a
-        // bare 500 (#733 follow-up). The browser stalled mid-startup — usually a container memory/resource
-        // limit or a wedged Chromium, not a network/proxy issue (that's the auth-timeout's signature).
+        // bare 500 (#733 follow-up). This deadline covers EVERY cause and cannot tell them apart: the
+        // auth-timeout below only fires once the page has LOADED (whatsapp-web.js navigates with
+        // page.goto(..., { waitUntil: 'load', timeout: 0 }) and starts its authTimeoutMs poll in inject()
+        // afterwards), so a navigation that hangs (an unreachable WhatsApp Web, or a proxy that accepts
+        // the connection and never answers) hits this deadline too, not the auth timeout. The message must
+        // name every cause and rule out none. It also says ENGINE, not browser: the deadline is
+        // engine-agnostic (Baileys launches no browser), and in the hang case the browser did start.
         throw new HttpException(
-          `Engine initialization timed out after ${err.timeoutMs}ms — the browser process did not complete ` +
-            'startup in time (often a container memory/resource limit or a stalled Chromium, not a network ' +
-            'issue). Retry the session; for chronically slow first boots, raise WWEBJS_AUTH_TIMEOUT_MS.',
+          `Engine initialization timed out after ${err.timeoutMs}ms: the engine did not finish starting. ` +
+            'WhatsApp Web, the network or the session proxy may be unreachable, or the browser may have ' +
+            'stalled during startup (for example a container memory/resource limit). Retry the session; for ' +
+            'chronically slow first boots, raise WWEBJS_AUTH_TIMEOUT_MS.',
           HttpStatus.GATEWAY_TIMEOUT,
         );
       } else if (isAuthTimeoutRejection(err)) {
