@@ -545,8 +545,12 @@ test('Refresh on a feed that never connected re-reads the list once the socket i
   await waitFor(() => assert.equal(listReads(), 2));
   await screen.findByText('new-device');
   // Compared as booleans: a failing assert.equal renders both operands, and a jsdom node never finishes.
-  assert.equal(screen.queryByText('gateway unavailable') === null, true, 'the failed read error is still shown');
-  assert.equal(screen.queryByRole('alert') === null, true, 'the feed banner is still shown');
+  assert.equal(
+    screen.queryByText('gateway unavailable') === null,
+    true,
+    'expected the re-read to clear the failed read error',
+  );
+  assert.equal(screen.queryByRole('alert') === null, true, 'expected the feed banner to be gone once connected');
 });
 
 test('a failed mount read is retried when the feed first connects after its own retries', async () => {
@@ -569,7 +573,52 @@ test('a failed mount read is retried when the feed first connects after its own 
 
   await waitFor(() => assert.equal(listReads(), 2));
   await screen.findByText('new-device');
-  assert.equal(screen.queryByText('gateway unavailable') === null, true, 'the failed read error is still shown');
+  assert.equal(
+    screen.queryByText('gateway unavailable') === null,
+    true,
+    'expected the retry to clear the failed read error',
+  );
+});
+
+test('a later failure on the same connection is retried too, once the first recovery succeeded', async () => {
+  const { screen, waitFor, act } = rtl;
+  resetFetchCalls();
+  sessionListFailures = 1;
+  window.sessionStorage.setItem('openwa_api_key', 'test-key');
+  holdConnect();
+  renderSessions();
+
+  await screen.findByText('gateway unavailable');
+  const listReads = (): number => fetchCalls.filter(c => c.method === 'GET' && c.path === '/api/sessions').length;
+  const socket = lastSocket();
+  assert.ok(socket, 'expected the page to have opened a socket');
+  act(() => socket.receive('connect'));
+
+  // The connect spends the one retry this connect is allowed and the read succeeds, so the page is
+  // healthy again, and the allowance must come back with it.
+  await waitFor(() => assert.equal(listReads(), 2));
+  await screen.findByText('new-device');
+
+  // Much later, on the SAME socket: a restriction push re-reads the list and that read fails. Nothing
+  // else on the page re-reads (the banner's Refresh renders only on a dead feed), so a spent allowance
+  // would leave the operator with a stale list under a red box and no control to clear it.
+  sessionListFailures = 1;
+  act(() => {
+    socket.receive('message', {
+      type: 'event',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      payload: { event: 'session.restriction', sessionId: SESSION_QR.id, data: {} },
+    });
+  });
+
+  await waitFor(() => assert.equal(listReads(), 4));
+  await waitFor(() =>
+    assert.equal(
+      screen.queryByText('gateway unavailable') === null,
+      true,
+      'expected the retry to clear the failed read error',
+    ),
+  );
 });
 
 test('a connect retries a failed list read once, even when each failure carries a new message', async () => {

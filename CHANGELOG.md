@@ -50,7 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A request forwarded to the node that owns its session answers `504` or `502`, not `503`, when the forward times out or breaks after the request was sent, so a client retrying on `503` no longer repeats a send the owner may have carried out; `503` remains for an owner that could not be reached at all.
 - The dashboard Logs page and its sidebar entry are shown to admin keys only, matching the ADMIN-only `GET /api/audit` it reads.
 - The dashboard Sessions page hides Show QR for viewer keys, since the QR is operator-only.
-- The dashboard Sessions page re-reads the session list once live updates connect after a failed initial load, instead of keeping the error until a reload.
+- The dashboard Sessions page re-reads the session list once after a failed read, as soon as live updates are connected, and regains that retry after a successful read, instead of keeping the error until a reload.
 - The dashboard Templates page shows a load or permission error when the template list cannot be read, instead of "No templates saved".
 - The dashboard Webhooks Configured card shows a placeholder instead of 0 when the webhook list cannot be read.
 - Dashboard message search ignores a response that arrives after a newer query, so stale results no longer replace the current ones.
