@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, IsInt, IsNumber, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { MessageDirection } from '../../message/entities/message.entity';
 import type { MessageType } from '../../../engine/interfaces/whatsapp-engine.interface';
@@ -62,7 +62,7 @@ export class SearchQueryDto {
   @ApiPropertyOptional({ description: 'Max hits to return', type: Number })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
   limit?: number;
 
@@ -70,7 +70,7 @@ export class SearchQueryDto {
   @IsOptional()
   @ToStrictNumber()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(0)
   offset?: number;
 }

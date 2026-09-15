@@ -1713,7 +1713,7 @@ Render a stored text template (header/body/footer joined by blank lines, `{{vars
 
 Delegates to the send-text path after rendering.
 
-**Errors:** `400` unknown body field, validation failure, or session not active · `401` missing/invalid API key · `403` key role below OPERATOR · `404` session or template not found · `500` engine error · `409` conflict or engine not ready (retryable)
+**Errors:** `400` unknown body field, validation failure, neither `templateId` nor `templateName` given, or session not active · `401` missing/invalid API key · `403` key role below OPERATOR · `404` session or template not found · `500` engine error · `409` conflict or engine not ready (retryable)
 
 #### POST /api/sessions/:sessionId/messages/send-image
 
@@ -2170,6 +2170,8 @@ Send messages to multiple recipients as an async batch — returns immediately a
 Each `BulkMessageItemDto`: `{ chatId: string, type: 'text'|'image'|'video'|'audio'|'document', content: BulkMessageContentDto, variables?: Record<string,string> }`. `content` (all fields optional, nested-validated): `text?: string`, `image?`/`video?`/`audio?`/`document?`: `{ url?, base64?, mimetype?, filename? }`, `caption?: string`, `mentions?: string[]` (per item; a batch fans out to many chats, and a WID is only taggable in a chat the participant is in).
 
 `BulkMessageOptionsDto`: `{ delayBetweenMessages?: number (1000–60000, default 3000), randomizeDelay?: boolean (default true), stopOnError?: boolean (default false) }`.
+
+Each item must carry what its `type` sends: a non-empty `chatId`, a non-empty `content.text` for `text`, and a `url` or `base64` under `content.<type>` for a media type. If any item does not, the request answers `400` and nothing is queued. The check runs again per item after `variables` and the `message:sending` gate, where a failure fails that item only.
 
 Each item's base64 media is checked against the media byte cap (`MEDIA_DOWNLOAD_MAX_BYTES`) twice: at batch creation, and again per item after `variables` and the `message:sending` plugin gate are applied. An item that outgrows the cap only after rendering fails individually (`failed` in `results`, with `message:failed` fired) instead of being sent. `totalMessages` in the response reflects the de-duplicated item count.
 
@@ -3367,8 +3369,8 @@ Update a template's name/body/header/footer (partial; only provided fields chang
 
 | Field  | Type   | Required | Constraints                           | Description                                                                                                                                                         |
 | ------ | ------ | -------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| name   | string | no       | if present: non-empty, max 100 chars  | Applied only when not `undefined`. Duplicate name → `409`.                                                                                                          |
-| body   | string | no       | if present: non-empty, max 4096 chars | Applied only when not `undefined`.                                                                                                                                  |
+| name   | string | no       | if present: non-empty, max 100 chars  | Applied only when not `undefined`; explicit `null` → `400`. Duplicate name → `409`.                                                                                 |
+| body   | string | no       | if present: non-empty, max 4096 chars | Applied only when not `undefined`; explicit `null` → `400`.                                                                                                         |
 | header | string | no       | max 1024 chars                        | Applied only when not `undefined`. The update path does **not** coerce to `null`, so passing explicit `null` fails `@IsString`; omit the key to leave it unchanged. |
 | footer | string | no       | max 1024 chars                        | Applied only when not `undefined`.                                                                                                                                  |
 
@@ -3936,13 +3938,14 @@ Create or update a label.
 
 The label id is **yours to choose** and travels in the path. Whether this creates or updates depends
 only on whether that id already exists — reusing one rewrites that label rather than failing.
-Omitted fields are left as they are.
+The write replaces the whole label, so send every field it should keep: an omitted name or colour
+is not preserved.
 
 **Request body** — `UpsertLabelDto`
 
 | Field   | Type   | Required | Constraints  | Description                                  |
 | ------- | ------ | -------- | ------------ | -------------------------------------------- |
-| `name`  | string | No       | 1–100 chars  | Omit to keep the current name                |
+| `name`  | string | No       | 1–100 chars  | Not preserved when omitted                   |
 | `color` | number | No       | integer 0–19 | WhatsApp's colour **index**, not a hex value |
 
 `color` deliberately does not round-trip with the `hexColor` the read routes return: neither engine
@@ -6158,8 +6161,8 @@ Search messages across sessions (active search provider).
 | `from`      | string                          | No       | —       | Filter by sender.                                                                                                                                                                             |
 | `dateFrom`  | integer (epoch ms)              | No       | —       | Inclusive lower bound on `timestamp`. A non-numeric value is rejected with `400`.                                                                                                             |
 | `dateTo`    | integer (epoch ms)              | No       | —       | Inclusive upper bound on `timestamp`. A non-numeric value is rejected with `400`.                                                                                                             |
-| `limit`     | integer (≥ 1)                   | No       | `50`    | Max hits to return. Clamped to `SEARCH_LIMIT_MAX` (default `100`). A non-numeric value is rejected with `400`.                                                                                |
-| `offset`    | integer (≥ 0)                   | No       | `0`     | Pagination offset. A non-numeric value is rejected with `400`.                                                                                                                                |
+| `limit`     | integer (≥ 1)                   | No       | `50`    | Max hits to return. Clamped to `SEARCH_LIMIT_MAX` (default `100`). A non-integer value is rejected with `400`.                                                                                |
+| `offset`    | integer (≥ 0)                   | No       | `0`     | Pagination offset. A non-integer value is rejected with `400`.                                                                                                                                |
 
 **Response** `200` — `SearchResults`
 

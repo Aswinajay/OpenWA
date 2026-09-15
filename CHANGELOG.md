@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The webhook delivery reconciler no longer replays a delivery that is still waiting for a dispatch slot or retrying on the node that dispatched it, which sent a duplicate outside `WEBHOOK_DISPATCH_CONCURRENCY` and could close a slow delivery as failed while it was still running.
 - A webhook delivery shed at `WEBHOOK_DISPATCH_MAX_QUEUED` or refused during shutdown is no longer replayed by the delivery reconciler, so its delivery-failure row no longer reports an event that was delivered after all.
 - `session.reconnect_loop` webhooks carry an idempotency key salted per occurrence, so an alert from a later outage that reaches the same attempt count is no longer deduplicated onto the earlier one or left without a delivery record.
+- A bulk batch sends each message through the session's current engine, so a reconnect or restart mid-batch no longer fails every remaining message.
+- `POST /messages/send-bulk` answers 400 for an item with an empty `chatId`, a text item without text, or a media item without a `url` or `base64` under its type; such items used to be accepted with 202 and fail later.
+- `POST /messages/send-bulk` answers 400, not 500, when a concurrent request already created the same `batchId`.
+- `PUT /templates/:id` answers 400, not 500, for a `null` `name` or `body`.
+- `GET /api/search` answers 400, not 500, for a fractional `limit` or `offset`.
+- `POST /messages/send-template` without `templateId` or `templateName` answers 400 instead of 404.
+- The label upsert documentation no longer says omitted fields are kept: the write replaces the whole label, so an omitted name or colour is not preserved.
 
 ## [0.23.5] - 2026-09-14
 
