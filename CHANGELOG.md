@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The Italian (`it`) dashboard translates the session proxy Save button, the webhook chat-kind filter label and the warning shown when a backup export leaves out media ([#1583](https://github.com/rmyndharis/OpenWA/pull/1583)). Thanks @albanobattistella.
 - `webhooks.deliveryFailures` returns a typed `WebhookDeliveryFailure` list in the JavaScript, Python, Go and Java SDKs; Go and Java callers that handled the old untyped value must update.
+- From-source minimum Node.js rises from 22.13 to **22.19**, the floor of the bundled `undici`.
 
 ### Fixed
 
@@ -55,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /api/infra/storage/export` streams files into the archive one at a time instead of loading the whole media store into memory first, so exporting a large local or S3 store no longer exhausts memory.
 - A Baileys session behind an HTTP(S) proxy that never answers CONNECT no longer leaves an open connection to the proxy on every reconnect attempt.
 - A Baileys inbound media download that passes `MEDIA_DOWNLOAD_TIMEOUT_MS` before its stream opens stops instead of buffering in the background outside `INBOUND_MEDIA_CONCURRENCY`.
+- `BAILEYS_CHAT_STATE_CACHE_MAX` is listed in `.env.example` and forwarded by both bundled Compose files, so the Baileys chat-state cache cap can be raised from `.env`.
 
 ## [0.23.5] - 2026-09-14
 
