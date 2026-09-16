@@ -76,15 +76,14 @@
 > server images — and treat a skew larger than `SESSION_LEASE_TTL_MS` as a misconfiguration.
 > The status correction reads the same timestamps: a node whose clock runs more than three TTLs minus
 > one heartbeat ahead (160s at defaults) marks a healthy peer's sessions disconnected, even with
-> `AUTO_START_SESSIONS` off, and nothing writes them back. On PostgreSQL the lease columns hold the
-> writer's local wall time with no zone, so every node must run in one zone without daylight saving,
-> `TZ=UTC` (the image default) being the simple choice; sharing a zone that observes daylight saving is
-> not enough. Across zones the error runs both ways. A node east of a peer reads
-> that peer's leases as expired by the offset, so it marks the peer's live sessions disconnected, and
-> again after each of their status changes (with auto-start on, it also takes them over). A node west
-> of a peer reads its leases as live for the offset, so a dead peer's sessions stay uncorrected and
-> unadopted for that long. In a shared zone with daylight saving, a lease renewed in the last TTL
-> before the clocks go back is stored an hour early, and peers mark that live session disconnected.
+> `AUTO_START_SESSIONS` off, and nothing writes them back. The zone each node runs in is no longer
+> part of this: on PostgreSQL the data connection binds, parses and defaults every timestamp in UTC
+> ([05 - Database Design](./05-database-design.md#timestamps-on-postgresql-are-utc)), so two nodes in
+> different zones, or one zone that observes daylight saving, still
+> read each other's leases as the instants they were written at. Only the clocks have to agree.
+> One exception, during an upgrade: a node still on 0.23.5 or earlier writes the lease in its own
+> local wall time, so while versions are mixed the old cross-zone error above is back for as long as
+> the older node keeps renewing. Running every node in `TZ=UTC` (the image default) removes it.
 >
 > **A forwarded request is throttled on both nodes.** The receiving node counts it before
 > forwarding, and the owner counts it again on arrival; with `REDIS_ENABLED=true` both counts land
