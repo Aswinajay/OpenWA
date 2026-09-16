@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restoring a data archive into PostgreSQL from a gateway that does not run in UTC no longer shifts every timestamp by the host offset, and no longer shifts it again on each further restore ([#1624](https://github.com/rmyndharis/OpenWA/issues/1624)).
 - Retention sweeps on PostgreSQL delete the rows their window names instead of taking up to the host's UTC offset of younger rows with them, and the `today` message counts cover the host's local day.
 - Session leases on PostgreSQL compare as instants across nodes in different time zones and across a daylight-saving change.
+- Live WebSocket sockets are re-validated against the API-key table once a minute, so a key deleted, revoked, expired or narrowed on another node or by a direct database write drops its sockets there too, and a socket that connected while its key was being revoked no longer keeps that authorization for the life of the connection ([#1625](https://github.com/rmyndharis/OpenWA/issues/1625)).
+- A WebSocket subscribe whose socket is evicted while it is in flight no longer registers its rooms after the disconnect.
 
 ### Upgrade notes (behavior changes)
 
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A table that has had an archive from a **SQLite** gateway restored into it holds those rows in correct UTC while the app wrote its own in local time. The two are indistinguishable within the column, so a blanket `UPDATE` would move the rows that are already right; correct such a column row by row against a known archive, or leave it as it is.
 - An archive a **PostgreSQL** gateway outside UTC exported before this release is shifted the other way, and restoring it moved the whole table, `DEFAULT now()` columns included: the export read every value back through the local-time parser and the import bound the resulting ISO text into a column that drops the zone, so each restore took the table one offset backward. No row in such a table is correct, and the conversion above would move those rows a further offset the wrong way. Where the table holds nothing but restored rows, apply the inverse once per restore taken: `UPDATE sessions SET "createdAt" = ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta';`. Where it also holds rows written after the restore, no blanket conversion is safe.
 - Re-export after upgrading for an archive whose stamps are the instants they claim; restoring a pre-release archive carries its shift in as it is.
+- A WebSocket client can now be disconnected with an `UNAUTHORIZED` frame up to a minute after its key changed, where before only the node that processed the change disconnected it; reconnect and resubscribe on that frame. A rename, and the key's usage counters, evict nobody.
 
 ## [0.23.5] - 2026-09-15
 
