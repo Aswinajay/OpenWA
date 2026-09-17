@@ -393,7 +393,8 @@
     },
     "start": {
       "teardownPendingTitle": "Démarrage de la session",
-      "teardownPending": "Un nettoyage d'identifiants pour cette session est encore en cours. Patientez un instant et réessayez."
+      "teardownPending": "Un nettoyage d'identifiants pour cette session est encore en cours. Patientez un instant et réessayez.",
+      "errorTitle": "Échec du démarrage"
     },
     "restriction": {
       "reachout_timelock": "Nouvelles discussions bloquées",

@@ -285,7 +285,8 @@
     },
     "start": {
       "teardownPendingTitle": "Oturum Başlatılıyor",
-      "teardownPending": "Bu oturum için bir kimlik bilgisi sıfırlama işlemi devam ediyor. Lütfen biraz bekleyip tekrar deneyin."
+      "teardownPending": "Bu oturum için bir kimlik bilgisi sıfırlama işlemi devam ediyor. Lütfen biraz bekleyip tekrar deneyin.",
+      "errorTitle": "Başlatma Başarısız"
     },
     "qr": {
       "title": "QR Kodunu Tara",

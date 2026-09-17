@@ -285,7 +285,8 @@
     },
     "start": {
       "teardownPendingTitle": "Session Starting",
-      "teardownPending": "A credential teardown for this session is still settling. Wait a moment and try again."
+      "teardownPending": "A credential teardown for this session is still settling. Wait a moment and try again.",
+      "errorTitle": "Start Failed"
     },
     "qr": {
       "title": "Scan QR Code",

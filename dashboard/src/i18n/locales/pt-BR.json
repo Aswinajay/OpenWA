@@ -393,7 +393,8 @@
     },
     "start": {
       "teardownPendingTitle": "Iniciando sessão",
-      "teardownPending": "A remoção de credenciais desta sessão ainda está em andamento. Aguarde um momento e tente novamente."
+      "teardownPending": "A remoção de credenciais desta sessão ainda está em andamento. Aguarde um momento e tente novamente.",
+      "errorTitle": "Erro ao iniciar"
     },
     "restriction": {
       "reachout_timelock": "Novas conversas bloqueadas",
