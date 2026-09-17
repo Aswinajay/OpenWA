@@ -6,7 +6,6 @@ import { NestFactory } from '@nestjs/core';
 import { INestApplication, ShutdownSignal } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule } from '@nestjs/swagger';
-import { AppModule, DASHBOARD_DIST, dashboardServingEnabled, dashboardBuildPresent } from './app.module';
 import { ShutdownService } from './common/services/shutdown.service';
 import { LoggerService, LogLevel, createLogger } from './common/services/logger.service';
 import { createSwaggerConfig, dropUnexpressibleOperations, exemptPublicOperations } from './config/swagger.config';
@@ -28,6 +27,33 @@ import { AuthService } from './modules/auth/auth.service';
 import { AuditService } from './modules/audit/audit.service';
 import { Request, Response, NextFunction } from 'express';
 import { RedisIoAdapter } from './modules/events/redis-io.adapter';
+
+interface BootstrapTarget {
+  module: typeof import('./app.module').AppModule | typeof import('./app.lightweight.module').LightweightAppModule;
+  dashboardDist: string;
+  dashboardServingEnabled: boolean;
+  dashboardBuildPresent: boolean;
+}
+
+async function loadBootstrapTarget(): Promise<BootstrapTarget> {
+  if (process.env.LIGHTWEIGHT_MODE === 'true') {
+    const target = await import('./app.lightweight.module');
+    return {
+      module: target.LightweightAppModule,
+      dashboardDist: target.DASHBOARD_DIST,
+      dashboardServingEnabled: target.dashboardServingEnabled,
+      dashboardBuildPresent: target.dashboardBuildPresent,
+    };
+  }
+
+  const target = await import('./app.module');
+  return {
+    module: target.AppModule,
+    dashboardDist: target.DASHBOARD_DIST,
+    dashboardServingEnabled: target.dashboardServingEnabled,
+    dashboardBuildPresent: target.dashboardBuildPresent,
+  };
+}
 
 // The created app, exposed at module scope so the fatal handler below can run a best-effort teardown
 // (engine sessions, Redis/pg) when bootstrap fails AFTER NestFactory.create succeeded — notably a
@@ -102,8 +128,10 @@ async function bootstrap() {
     logger: bootstrapLogger,
   });
 
+  const bootstrapTarget = await loadBootstrapTarget();
+
   // Disable Nest's default body parser so we can set an explicit size cap below.
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const app = await NestFactory.create(bootstrapTarget.module, { bodyParser: false });
   appInstance = app;
 
   // Cross-replica WebSocket fan-out: when Redis is enabled, broadcasts reach clients on every
@@ -171,14 +199,16 @@ async function bootstrap() {
   // does not cover; registering this before app.listen() ensures it runs ahead
   // of the Bull Board router. Requires a valid ADMIN API key. The middleware also
   // writes the audit trail for this mount (auth failures + queue mutations).
-  const bullBoardAuth = new BullBoardAuthMiddleware(
-    app.get(AuthService),
-    app.get(ConfigService),
-    app.get(AuditService),
-  );
-  app.use('/api/admin/queues', (req: Request, res: Response, next: NextFunction) => {
-    void bullBoardAuth.use(req, res, next);
-  });
+  if (process.env.QUEUE_ENABLED === 'true') {
+    const bullBoardAuth = new BullBoardAuthMiddleware(
+      app.get(AuthService),
+      app.get(ConfigService),
+      app.get(AuditService),
+    );
+    app.use('/api/admin/queues', (req: Request, res: Response, next: NextFunction) => {
+      void bullBoardAuth.use(req, res, next);
+    });
+  }
 
   // Apply explicit HTTP server timeouts so they are operator-tunable (REQUEST_TIMEOUT_MS /
   // HEADERS_TIMEOUT_MS / KEEPALIVE_TIMEOUT_MS) and observable at boot, instead of Node's implicit
@@ -210,13 +240,13 @@ async function bootstrap() {
 
   // Make the dashboard-serving outcome explicit so a missing build (no UI on `/`)
   // is obvious instead of a silent 404.
-  if (!dashboardServingEnabled) {
+  if (!bootstrapTarget.dashboardServingEnabled) {
     console.log('🖥️  Dashboard: serving disabled (SERVE_DASHBOARD=false); API only');
-  } else if (dashboardBuildPresent) {
+  } else if (bootstrapTarget.dashboardBuildPresent) {
     console.log(`🖥️  Dashboard: serving bundled UI at ${publicUrl}`);
   } else {
     console.warn(
-      `⚠️  Dashboard: no build at ${DASHBOARD_DIST} - UI disabled (API still serves /api). ` +
+      `⚠️  Dashboard: no build at ${bootstrapTarget.dashboardDist} - UI disabled (API still serves /api). ` +
         'Run `npm run build:all` to bundle it, or use the Vite dev server (`npm run dev`).',
     );
   }
@@ -229,7 +259,7 @@ async function bootstrap() {
     isDashboardCspUpgradeTrapLikely({
       nodeEnv: process.env.NODE_ENV,
       cspEnv: process.env.CSP_UPGRADE_INSECURE_REQUESTS,
-      dashboardServed: dashboardServingEnabled && dashboardBuildPresent,
+      dashboardServed: bootstrapTarget.dashboardServingEnabled && bootstrapTarget.dashboardBuildPresent,
     })
   ) {
     console.warn(
