@@ -27,8 +27,6 @@ import { HooksModule } from './core/hooks';
 import { PluginsModule } from './core/plugins';
 import { SqlitePermissionsBoot } from './database/sqlite-file-permissions';
 
-// Lightweight mode deliberately keeps only the API/session/engine path needed for sending.
-// Render Free local storage is ephemeral, so this profile is intended for lightweight testing.
 const serveStaticModules: Array<Type | DynamicModule> = [];
 export const DASHBOARD_DIST = path.resolve(__dirname, '..', 'dashboard', 'dist');
 export const dashboardServingEnabled = process.env.SERVE_DASHBOARD !== 'false';
