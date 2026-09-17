@@ -1,0 +1,61 @@
+# =====================================================================
+# Render Blueprint Specification for OpenWA (Free Tier Optimized)
+# =====================================================================
+# Documentation: https://render.com/docs/blueprint-spec
+#
+# Deploy options:
+# 1. Connect your GitHub fork (Aswinajay/OpenWA) to Render.
+# 2. Choose "Blueprints" -> "New Blueprint Instance".
+# 3. Render will automatically read this file and set up OpenWA!
+# =====================================================================
+
+services:
+  - type: web
+    name: openwa
+    # Native Node 22 runtime is fast and memory-efficient.
+    # To use Docker instead:
+    # runtime: docker
+    # dockerfilePath: ./Dockerfile.render
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: PUPPETEER_SKIP_DOWNLOAD=true npm ci && npm run build:all
+    startCommand: node dist/main
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: HOST
+        value: 0.0.0.0
+      # Critical for 512MB RAM: Baileys connects via pure WebSocket (no Chromium)
+      - key: ENGINE_TYPE
+        value: baileys
+      # Database: lightweight SQLite without external DB requirement
+      - key: DATABASE_TYPE
+        value: sqlite
+      - key: DATABASE_NAME
+        value: ./data/openwa.sqlite
+      - key: SESSION_DATA_PATH
+        value: ./data/sessions
+      - key: AUTO_START_SESSIONS
+        value: "true"
+      # Turn off optional heavy services to save RAM
+      - key: QUEUE_ENABLED
+        value: "false"
+      - key: REDIS_ENABLED
+        value: "false"
+      - key: CACHE_ENABLED
+        value: "false"
+      - key: SEARCH_ENABLED
+        value: "false"
+      - key: MCP_ENABLED
+        value: "false"
+      - key: SERVE_DASHBOARD
+        value: "true"
+      - key: PUPPETEER_SKIP_DOWNLOAD
+        value: "true"
+      # Render will generate a cryptographically strong 32+ character key
+      - key: API_MASTER_KEY
+        generateValue: true
