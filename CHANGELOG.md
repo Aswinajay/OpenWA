@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live WebSocket sockets are re-validated against the API-key table once a minute, so a key deleted, revoked, expired or narrowed on another node or by a direct database write drops its sockets there too, and a socket that connected while its key was being revoked no longer keeps that authorization for the life of the connection ([#1625](https://github.com/rmyndharis/OpenWA/issues/1625)).
 - A WebSocket subscribe whose socket is evicted while it is in flight no longer registers its rooms after the disconnect.
 
+### Documentation
+
+- The docs, the README, the OpenAPI field descriptions and the dashboard's auto-reject hint mark call events, call rejection and `autoRejectCalls` as Baileys only: on current WhatsApp Web builds whatsapp-web.js no longer detects a ringing call ([#1118](https://github.com/rmyndharis/OpenWA/discussions/1118)). Thanks @etondeengole for the report.
+
 ### Upgrade notes (behavior changes)
 
 - PostgreSQL deployments: the data connection issues `SET TIME ZONE 'UTC'` per connection and verifies the result at boot. A deployment where that cannot hold (a pooler that drops session state) now fails to start, naming the effective zone; set the default instead with `ALTER DATABASE "<database>" SET TimeZone='UTC'`. SQLite deployments, and any gateway already running in UTC, are unaffected and no data moves.
