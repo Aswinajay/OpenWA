@@ -25,15 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Download cloudflared binary for target architecture
-RUN dpkgArch="$(dpkg --print-architecture)" \
-    && case "${dpkgArch##*-}" in \
-        amd64) cfArch='amd64' ;; \
-        arm64) cfArch='arm64' ;; \
-        *) echo "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
-    esac \
-    && curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cfArch}" -o /usr/local/bin/cloudflared \
-    && chmod +x /usr/local/bin/cloudflared
+# Download and install cloudflared via script (avoids Kaniko variable parser error)
+COPY scripts/install-cloudflared.sh ./scripts/
+RUN chmod +x ./scripts/install-cloudflared.sh && ./scripts/install-cloudflared.sh
 
 COPY package*.json ./
 COPY scripts/postinstall.js ./scripts/
