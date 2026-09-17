@@ -15,12 +15,14 @@ import { SendPacingService } from './send-pacing.service';
 import { MessageBatch } from './entities/message-batch.entity';
 import { PLUGIN_MESSAGE_PORT } from '../../core/plugins/plugin-host-ports';
 
+const optionalMessageModules = process.env.LIGHTWEIGHT_MODE === 'true' ? [] : [ChatMediaModule];
+
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, MessageBatch, Session], 'data'),
     SessionModule,
     TemplateModule,
-    ChatMediaModule,
+    ...optionalMessageModules,
   ],
   controllers: [MessageController],
   providers: [
@@ -30,10 +32,6 @@ import { PLUGIN_MESSAGE_PORT } from '../../core/plugins/plugin-host-ports';
     MessageTypeBackfillService,
     PendingMessageReaperService,
     SendPacingService,
-    // Binds the core-owned plugin capability port to this module's service. The plugin runtime
-    // resolves the token lazily via ModuleRef (PluginHostServices), which keeps its provider cycle
-    // broken; this adapter is how core reaches the service without importing it.
-    // An alias, not a factory, so lifecycle hooks are not dispatched twice on the same instance.
     { provide: PLUGIN_MESSAGE_PORT, useExisting: MessageService },
   ],
   exports: [MessageService, BulkMessageService, SendPacingService],
