@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- The docs, the README, the OpenAPI field descriptions and the dashboard's auto-reject hint mark call events, call rejection and `autoRejectCalls` as Baileys only: on current WhatsApp Web builds whatsapp-web.js no longer detects a ringing call ([#1118](https://github.com/rmyndharis/OpenWA/discussions/1118)). Thanks @etondeengole for the report.
+- The docs, the README, the OpenAPI field descriptions and the dashboard's auto-reject hint mark call rejection, `autoRejectCalls` and the call outcome events as Baileys only, and `call.received` as not reliable on whatsapp-web.js ([#1118](https://github.com/rmyndharis/OpenWA/discussions/1118)). Thanks @etondeengole for the report.
 
 ### Upgrade notes (behavior changes)
 
