@@ -71,7 +71,6 @@ const dataDatabase = TypeOrmModule.forRootAsync({
     const synchronize = configService.get<boolean>('dataDatabase.synchronize', true);
     return {
       name: 'data',
-      // LIGHTWEIGHT_MODE is intentionally SQLite-only even if a stale DATABASE_TYPE/DATABASE_* env is present.
       type: 'better-sqlite3' as const,
       database: configService.get<string>('dataDatabase.database', './data/openwa.sqlite'),
       entities: [
