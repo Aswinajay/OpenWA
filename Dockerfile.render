@@ -1,13 +1,14 @@
 # =====================================================================
-# OpenWA - Lightweight Dockerfile for Render Free Tier (512 MB RAM)
+# OpenWA - Ultra-Lightweight Dockerfile with Cloudflare Tunnel Support
 # =====================================================================
-# Key optimizations for Render Free Plan:
+# Key optimizations for Free Tiers (Render, Back4App, 256MB/512MB RAM):
 # 1. Omits Chromium, Puppeteer browser download, X11, GTK, & ffmpeg
-#    (Reduces image size from ~2.2 GB to ~180 MB, build time from ~15m to ~2m)
+#    (Reduces image size from ~2.2 GB to ~180 MB, build time to ~2m)
 # 2. Defaults to ENGINE_TYPE=baileys (WebSockets, no browser)
-#    (Consumes ~60-100 MB RAM instead of ~500+ MB with Chrome)
-# 3. Sets NODE_OPTIONS="--max-old-space-size=384" to prevent V8 OOM crashes
-# 4. Disables memory-heavy background queues, Redis, and search indexer
+#    (Consumes ~60 MB RAM instead of ~500+ MB with Chrome)
+# 3. Restricts V8 heap via NODE_OPTIONS="--max-old-space-size=180"
+# 4. Built-in Cloudflare Tunnel support (cloudflared) for $0 custom domain
+# 5. Disables memory-heavy background queues, Redis, and search indexer
 # =====================================================================
 
 # ===== Stage 1: Builder =====
@@ -15,12 +16,24 @@ FROM docker.io/node:22-slim AS builder
 
 WORKDIR /app
 
-# Minimal build tools for native compilation if required (e.g. better-sqlite3)
+# Minimal build tools for native compilation and download cloudflared
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
+    curl \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Download cloudflared binary for target architecture
+RUN dpkgArch="$(dpkg --print-architecture)" \
+    && case "${dpkgArch##*-}" in \
+        amd64) cfArch='amd64' ;; \
+        arm64) cfArch='arm64' ;; \
+        *) echo "unsupported architecture: ${dpkgArch}"; exit 1 ;; \
+    esac \
+    && curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cfArch}" -o /usr/local/bin/cloudflared \
+    && chmod +x /usr/local/bin/cloudflared
 
 COPY package*.json ./
 COPY scripts/postinstall.js ./scripts/
@@ -60,21 +73,26 @@ ENV NODE_ENV=production \
     MCP_ENABLED=false \
     SERVE_DASHBOARD=true \
     AUTO_START_SESSIONS=true \
-    NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"
+    NODE_OPTIONS="--max-old-space-size=180"
 
 WORKDIR /app
 
-# Install dumb-init for clean process reaping and patch for Baileys fixes
+# Install dumb-init for process reaping, patch for Baileys, and ca-certificates for TLS
 RUN apt-get update && apt-get install -y --no-install-recommends \
     dumb-init \
     patch \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Copy cloudflared binary from builder stage
+COPY --from=builder /usr/local/bin/cloudflared /usr/local/bin/cloudflared
 
 # Non-root user for security
 RUN groupadd -r openwa && useradd -r -g openwa openwa
 
 COPY package*.json ./
 COPY scripts/ ./scripts/
+RUN chmod +x /app/scripts/docker-entrypoint-lite.sh
 
 # Install production dependencies only, apply Baileys patches, clean npm cache
 RUN PUPPETEER_SKIP_DOWNLOAD=true npm ci --omit=dev --ignore-scripts \
@@ -95,4 +113,4 @@ USER openwa
 EXPOSE 2785
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["node", "dist/main"]
+CMD ["/app/scripts/docker-entrypoint-lite.sh"]

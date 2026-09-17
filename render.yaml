@@ -27,7 +27,7 @@ services:
         value: production
       # Ultra-low memory: 256MB V8 heap limit optimized for size
       - key: NODE_OPTIONS
-        value: --max-old-space-size=256 --optimize-for-size
+        value: --max-old-space-size=256
       - key: HOST
         value: 0.0.0.0
       # Critical for 512MB RAM: Baileys connects via pure WebSocket (no Chromium)

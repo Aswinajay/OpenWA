@@ -18,7 +18,7 @@ When using OpenWA strictly for sending messages, alerts, OTPs, or transactional 
 | **Message Store** | Stores 5,000 messages in SQLite / heap | **`BAILEYS_MESSAGE_STORE_LIMIT=50`** — Keeps only the last 50 sent messages needed for WhatsApp's automatic recipient decryption-retry handshake. |
 | **LRU Session Caches** | 5,000 entries per chat/contact map | **`BAILEYS_SESSION_STORE_MAX_ENTRIES=100`** — Slashes in-memory Map allocations by 98%. |
 | **Online Presence** | Broadcasts online presence, silences phone notifications | **`BAILEYS_MARK_ONLINE_ON_CONNECT=false`** — Stays invisible to prevent inbound traffic. |
-| **Node V8 Heap Limit** | Unbounded | **`NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"`** — Restricts V8 heap to 256MB and optimizes internal V8 structures for size. |
+| **Node V8 Heap Limit** | Unbounded | **`NODE_OPTIONS="--max-old-space-size=256"`** — Restricts V8 heap to 256MB to prevent memory bloat. |
 | **Outgoing Delivery Acks** | Active | **Retained!** When you send a message, delivery acknowledgments (`sent`, `delivered`, `read`) continue working normally. |
 
 ---
@@ -73,7 +73,7 @@ Add these under the **Environment** tab of your Render web service (or use [`ren
 
 ```env
 NODE_ENV=production
-NODE_OPTIONS=--max-old-space-size=256 --optimize-for-size
+NODE_OPTIONS=--max-old-space-size=256
 HOST=0.0.0.0
 ENGINE_TYPE=baileys
 OUTBOUND_ONLY=true
