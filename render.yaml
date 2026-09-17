@@ -36,6 +36,9 @@ services:
       # Micro-optimization: Send-only mode (drops inbound message processing entirely)
       - key: OUTBOUND_ONLY
         value: "true"
+      # Lite mode: omits non-essential auxiliary modules to fit in <= 100MB RAM
+      - key: LITE_MODE
+        value: "true"
       - key: BAILEYS_SYNC_HISTORY
         value: "false"
       - key: BAILEYS_SYNC_FULL_HISTORY

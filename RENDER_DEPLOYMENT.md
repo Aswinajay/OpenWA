@@ -12,6 +12,7 @@ When using OpenWA strictly for sending messages, alerts, OTPs, or transactional 
 | Component | Normal Behavior | Send-Only Micro-Optimization |
 | :--- | :--- | :--- |
 | **Inbound Message Stream** | Decodes protobuf, maps body, emits webhooks, saves to DB | **`OUTBOUND_ONLY=true`** — Instantly drops incoming messages from other contacts at the socket level. Zero memory/CPU waste! |
+| **Auxiliary Modules** | Loads 30+ NestJS modules (Metrics, Stats, Agent Tools, Catalog, Takeover) | **`LITE_MODE=true`** — Omits auxiliary modules from the DI graph, shaving off ~25MB heap to comfortably run inside <= 100MB RAM. |
 | **History Sync** | Downloads and parses past chat messages on connection | **`BAILEYS_SYNC_HISTORY=false`** — Skips all history message sync, avoiding 100MB+ memory spikes. |
 | **Inbound Media** | Downloads and decrypts images, videos, voice notes | **`MEDIA_DOWNLOAD_ENABLED=false`** — Zero incoming media downloads or buffer allocations. |
 | **Message Store** | Stores 5,000 messages in SQLite / heap | **`BAILEYS_MESSAGE_STORE_LIMIT=50`** — Keeps only the last 50 sent messages needed for WhatsApp's automatic recipient decryption-retry handshake. |
@@ -76,6 +77,7 @@ NODE_OPTIONS=--max-old-space-size=256 --optimize-for-size
 HOST=0.0.0.0
 ENGINE_TYPE=baileys
 OUTBOUND_ONLY=true
+LITE_MODE=true
 BAILEYS_SYNC_HISTORY=false
 BAILEYS_SYNC_FULL_HISTORY=false
 MEDIA_DOWNLOAD_ENABLED=false

@@ -66,6 +66,9 @@ export class StatusStoreService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    if (process.env.OUTBOUND_ONLY === 'true') {
+      return;
+    }
     const runPurge = (): void => {
       this.purgeExpired(Date.now()).catch(err =>
         this.logger.error('Status purge failed', err instanceof Error ? err.stack : String(err)),

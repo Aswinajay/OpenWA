@@ -84,6 +84,9 @@ export class ChatMediaArchiveService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
+    if (process.env.OUTBOUND_ONLY === 'true') {
+      return;
+    }
     const runPurge = (): void => {
       this.purgeExpired(Date.now()).catch(err =>
         this.logger.error('Chat media purge failed', err instanceof Error ? err.stack : String(err)),

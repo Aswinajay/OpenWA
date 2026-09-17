@@ -65,6 +65,23 @@ if (process.env.SEARCH_ENABLED !== 'false') {
   searchModules.push(SearchModule);
 }
 
+// In LITE_MODE=true (for ultra-low RAM environments <= 100MB), omit auxiliary non-essential modules
+// (Calls, Channels, Stats, Metrics, Business Catalog, Plugins API, Agent Tools, Cluster Takeover).
+// This reduces NestJS DI graph size, reflection metadata, and route overhead by ~25MB RAM.
+const auxiliaryModules: Array<Type | DynamicModule> = [];
+if (process.env.LITE_MODE !== 'true') {
+  auxiliaryModules.push(
+    CallModule,
+    ChannelModule,
+    StatsModule,
+    MetricsModule,
+    CatalogModule,
+    PluginsApiModule,
+    AgentToolsModule,
+    TakeoverModule,
+  );
+}
+
 // Only mount the MCP server if explicitly enabled to avoid startup cost and
 // the SDK import (which pulls in @modelcontextprotocol/sdk) in non-MCP deployments.
 const mcpModules: Array<Type | DynamicModule> = [];
@@ -301,21 +318,14 @@ if (dashboardServingEnabled && dashboardBuildPresent) {
     ContactModule,
     GroupModule,
     ProfileModule, // Own-profile API (name / status / picture)
-    CallModule, // Incoming-call API (reject a ringing call)
     LabelModule, // Phase 3: Labels Management
-    ChannelModule, // Phase 3: Channels/Newsletter
-    StatsModule, // Phase 3: Statistics Dashboard
-    MetricsModule, // Prometheus /api/metrics
     StatusModule, // Phase 3: Status/Stories API
     MediaModule, // Server-side media conversion (opt-in)
     StatusStoreModule, // Phase 3: inbound status/story TTL store (24h purge + media persistence)
     ChatMediaModule, // opt-in chat-media archive (retention purge + orphan sweep)
     AutomationModule, // single-message autoreply rules, evaluated on the inbound dispatch
-    TakeoverModule, // adopts sessions whose holder's lease lapsed (crashed peer / recreated node)
-    CatalogModule, // Phase 3: Catalog API (WhatsApp Business)
-    PluginsApiModule, // Phase 5: Plugins API
-    AgentToolsModule, // Agent-invocable tool registry (protocol-neutral)
     IntegrationModule, // Integration Fabric: @Public provider-webhook ingress + fast-ack pipeline
+    ...auxiliaryModules,
     ...searchModules, // Global message search (opt-out via SEARCH_ENABLED=false; default ON)
     ...mcpModules, // MCP Streamable-HTTP server (opt-in via MCP_ENABLED=true)
     ...serveStaticModules, // Bundled dashboard SPA (production single-port setup)

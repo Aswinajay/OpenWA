@@ -41,6 +41,7 @@ ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=true \
     ENGINE_TYPE=baileys \
     OUTBOUND_ONLY=true \
+    LITE_MODE=true \
     BAILEYS_SYNC_HISTORY=false \
     BAILEYS_SYNC_FULL_HISTORY=false \
     MEDIA_DOWNLOAD_ENABLED=false \
