@@ -151,9 +151,13 @@ export class BaileysEvents {
   constructor(private readonly host: BaileysEventsHost) {}
 
   handleMessagesUpsert(event: { messages: WAMessage[]; type: string }): void {
+    const outboundOnly = process.env.OUTBOUND_ONLY === 'true';
     for (const msg of event.messages) {
       if (!msg.message || !msg.key?.remoteJid) {
         continue; // protocol/empty messages carry no neutral content
+      }
+      if (outboundOnly && msg.key.fromMe !== true) {
+        continue;
       }
       if (event.type !== 'notify') {
         // Baileys echoes back OUR OWN just-sent messages through this same 'append' path too, and

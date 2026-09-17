@@ -57,7 +57,7 @@ export class BaileysHistory {
    * carry no names) and seeding each chat's last-message preview.
    */
   async captureHistoryMessages(messages: WAMessage[]): Promise<void> {
-    if (!messages.length) {
+    if (process.env.OUTBOUND_ONLY === 'true' || !messages.length) {
       return;
     }
     const b = await this.host.loadLib();

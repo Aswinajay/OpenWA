@@ -216,9 +216,12 @@ export class SessionEngineEventWiring {
         }
         host.handleEngineReady(id, engine, phone, pushName);
       },
-      onMessage: (message): void => host.messages.handleInboundMessage(id, engine, message),
+      onMessage: (message): void => {
+        if (process.env.OUTBOUND_ONLY === 'true') return;
+        host.messages.handleInboundMessage(id, engine, message);
+      },
       onHistoryMessages: (messages): void => {
-        if (!host.isLiveEngine(id, engine)) return;
+        if (process.env.OUTBOUND_ONLY === 'true' || !host.isLiveEngine(id, engine)) return;
         // Persist for the chat view only; no dispatch (these predate the live session).
         void host.messages
           .persistHistoryMessages(id, messages)

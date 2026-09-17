@@ -25,13 +25,29 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Ultra-low memory: 256MB V8 heap limit optimized for size
       - key: NODE_OPTIONS
-        value: --max-old-space-size=384
+        value: --max-old-space-size=256 --optimize-for-size
       - key: HOST
         value: 0.0.0.0
       # Critical for 512MB RAM: Baileys connects via pure WebSocket (no Chromium)
       - key: ENGINE_TYPE
         value: baileys
+      # Micro-optimization: Send-only mode (drops inbound message processing entirely)
+      - key: OUTBOUND_ONLY
+        value: "true"
+      - key: BAILEYS_SYNC_HISTORY
+        value: "false"
+      - key: BAILEYS_SYNC_FULL_HISTORY
+        value: "false"
+      - key: MEDIA_DOWNLOAD_ENABLED
+        value: "false"
+      - key: BAILEYS_MARK_ONLINE_ON_CONNECT
+        value: "false"
+      - key: BAILEYS_MESSAGE_STORE_LIMIT
+        value: "50"
+      - key: BAILEYS_SESSION_STORE_MAX_ENTRIES
+        value: "100"
       # Database: lightweight SQLite without external DB requirement
       - key: DATABASE_TYPE
         value: sqlite

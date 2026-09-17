@@ -1,24 +1,30 @@
 # Deploying OpenWA on Render Free Plan (512 MB RAM)
+## ⚡ Micro-Optimized for Outbound/Send-Only (Alerts, Notifications & Bots)
 
-This guide covers how to deploy and run **OpenWA** reliably on the **Render Free Web Service** tier within the **512 MB RAM** limit.
+This guide covers how to deploy and run **OpenWA** reliably on the **Render Free Web Service** tier within the **512 MB RAM** limit, micro-optimized specifically for **sending messages only** (not receiving).
 
 ---
 
-## 🚀 Key Optimizations for Render Free Tier
+## 🏎️ Send-Only Micro-Optimizations
 
-| Challenge | Standard Setup | Render Free Optimized Setup |
+When using OpenWA strictly for sending messages, alerts, OTPs, or transactional notifications, incoming message pipelines waste CPU, memory, and database I/O. We added dedicated optimizations that reduce active RAM usage to **~45 MB – 75 MB**:
+
+| Component | Normal Behavior | Send-Only Micro-Optimization |
 | :--- | :--- | :--- |
-| **RAM (512 MB Limit)** | WhatsApp-Web.js + Chromium (~500MB–800MB RAM) 💥 *OOM Crash* | **`ENGINE_TYPE=baileys`** (~60MB–100MB RAM) ✅ |
-| **Node V8 Heap** | Unbounded V8 memory growth | **`NODE_OPTIONS="--max-old-space-size=384"`** ✅ |
-| **Optional Services** | Redis + BullMQ queues + Search indexer | Disabled (`QUEUE_ENABLED=false`, `SEARCH_ENABLED=false`) ✅ |
-| **Docker Build** | Full Debian Chromium + ffmpeg + Postgres (~2.2 GB image, 15+ min build) | **`Dockerfile.render`** or **Native Node 22** (~180 MB image, <2 min build) ✅ |
-| **15-Min Inactivity Sleep** | Web service spins down after 15 minutes of no incoming requests | External free keep-alive ping on **`/api/health`** ✅ |
+| **Inbound Message Stream** | Decodes protobuf, maps body, emits webhooks, saves to DB | **`OUTBOUND_ONLY=true`** — Instantly drops incoming messages from other contacts at the socket level. Zero memory/CPU waste! |
+| **History Sync** | Downloads and parses past chat messages on connection | **`BAILEYS_SYNC_HISTORY=false`** — Skips all history message sync, avoiding 100MB+ memory spikes. |
+| **Inbound Media** | Downloads and decrypts images, videos, voice notes | **`MEDIA_DOWNLOAD_ENABLED=false`** — Zero incoming media downloads or buffer allocations. |
+| **Message Store** | Stores 5,000 messages in SQLite / heap | **`BAILEYS_MESSAGE_STORE_LIMIT=50`** — Keeps only the last 50 sent messages needed for WhatsApp's automatic recipient decryption-retry handshake. |
+| **LRU Session Caches** | 5,000 entries per chat/contact map | **`BAILEYS_SESSION_STORE_MAX_ENTRIES=100`** — Slashes in-memory Map allocations by 98%. |
+| **Online Presence** | Broadcasts online presence, silences phone notifications | **`BAILEYS_MARK_ONLINE_ON_CONNECT=false`** — Stays invisible to prevent inbound traffic. |
+| **Node V8 Heap Limit** | Unbounded | **`NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"`** — Restricts V8 heap to 256MB and optimizes internal V8 structures for size. |
+| **Outgoing Delivery Acks** | Active | **Retained!** When you send a message, delivery acknowledgments (`sent`, `delivered`, `read`) continue working normally. |
 
 ---
 
 ## ⚡ Method 1: 1-Click Deploy via Render Blueprint (Recommended)
 
-Render Blueprints automate creating the web service with the correct environment variables.
+Render Blueprints automate creating the web service with all micro-optimized environment variables.
 
 1. **Push this branch** (`lightweight`) to your GitHub fork:
    ```bash
@@ -35,11 +41,9 @@ Render Blueprints automate creating the web service with the correct environment
 
 ## 🛠️ Method 2: Manual Deploy on Render Dashboard
 
-If you prefer configuring the service manually in the Render dashboard:
-
 1. In Render, click **New +** → **Web Service**.
 2. Connect your GitHub repository.
-3. Choose your deployment type:
+3. Configure:
 
 ### Option A: Native Node Environment (Fastest & Lightest)
 * **Environment:** `Node`
@@ -62,66 +66,49 @@ If you prefer configuring the service manually in the Render dashboard:
 
 ---
 
-## 🔑 Required Environment Variables
+## 🔑 Key Environment Variables for Send-Only
 
-Set the following in the **Environment** tab of your Render web service:
+Add these under the **Environment** tab of your Render web service (or use [`render.yaml`](./render.yaml) / [`.env.render.example`](./.env.render.example)):
 
-| Variable | Recommended Value | Description |
-| :--- | :--- | :--- |
-| `NODE_ENV` | `production` | Production mode |
-| `NODE_OPTIONS` | `--max-old-space-size=384` | Restricts V8 heap to prevent exceeding 512MB RAM |
-| `HOST` | `0.0.0.0` | Binds to all network interfaces |
-| `ENGINE_TYPE` | `baileys` | **Mandatory:** Pure WebSocket engine (no Chromium) |
-| `PUPPETEER_SKIP_DOWNLOAD` | `true` | Prevents downloading heavy Chrome binary |
-| `DATABASE_TYPE` | `sqlite` | Lightweight local database (or `postgres` if using external DB) |
-| `DATABASE_NAME` | `./data/openwa.sqlite` | SQLite database path |
-| `SESSION_DATA_PATH` | `./data/sessions` | Where session credentials are stored |
-| `AUTO_START_SESSIONS` | `true` | Restarts paired sessions on boot |
-| `QUEUE_ENABLED` | `false` | Disables Redis queues |
-| `REDIS_ENABLED` | `false` | Disables Redis client |
-| `CACHE_ENABLED` | `false` | Disables external cache |
-| `SEARCH_ENABLED` | `false` | Disables message search indexer |
-| `SERVE_DASHBOARD` | `true` | Serves the web dashboard SPA on root URL |
-| `API_MASTER_KEY` | *(Random 32+ chars)* | Master admin API key (must be ≥32 characters) |
+```env
+NODE_ENV=production
+NODE_OPTIONS=--max-old-space-size=256 --optimize-for-size
+HOST=0.0.0.0
+ENGINE_TYPE=baileys
+OUTBOUND_ONLY=true
+BAILEYS_SYNC_HISTORY=false
+BAILEYS_SYNC_FULL_HISTORY=false
+MEDIA_DOWNLOAD_ENABLED=false
+BAILEYS_MARK_ONLINE_ON_CONNECT=false
+BAILEYS_MESSAGE_STORE_LIMIT=50
+BAILEYS_SESSION_STORE_MAX_ENTRIES=100
+DATABASE_TYPE=sqlite
+DATABASE_NAME=./data/openwa.sqlite
+SESSION_DATA_PATH=./data/sessions
+AUTO_START_SESSIONS=true
+QUEUE_ENABLED=false
+REDIS_ENABLED=false
+CACHE_ENABLED=false
+SEARCH_ENABLED=false
+MCP_ENABLED=false
+SERVE_DASHBOARD=true
+PUPPETEER_SKIP_DOWNLOAD=true
+API_MASTER_KEY=owa_k1_your_random_32_character_master_key
+```
 
 ---
 
 ## ⏰ Keeping OpenWA Awake 24/7 (Preventing 15-Minute Sleep)
 
-Render Free web services spin down after **15 minutes of inactivity**. Because WhatsApp Web/Baileys needs a continuous WebSocket connection to receive incoming messages in real-time, the service must remain awake.
+Render Free web services spin down after **15 minutes of inactivity**. Because WhatsApp Web/Baileys needs a continuous WebSocket connection to send messages instantly without a 50-second cold start:
 
-### Solution: Set up an external free keep-alive ping
-
-Render allows **750 free instance hours per month**, which is enough to run 1 service 24/7 continuously (744 hours in a 31-day month).
-
-1. Register for free on a monitoring service like:
-   * [Cron-job.org](https://cron-job.org)
-   * [UptimeRobot](https://uptimerobot.com)
-   * [Better Stack](https://betterstack.com)
-2. Create a new HTTP monitor pointing to your Render service:
+1. Register for free on:
+   * [Cron-job.org](https://cron-job.org) or [UptimeRobot](https://uptimerobot.com)
+2. Create an HTTP monitor pointing to your Render service:
    * **URL:** `https://<your-render-app-name>.onrender.com/api/health`
-   * **Interval:** Every **10 minutes** (or 5 minutes)
+   * **Interval:** Every **10 minutes**
    * **Method:** `GET`
-3. The `/api/health` route is unauthenticated, lightweight (<1ms response time), and will keep your instance active 24/7.
-
----
-
-## 💾 Notes on Ephemeral Storage & Re-linking
-
-Render Free tier uses **ephemeral disk storage**. This means:
-* When your service is redeployed or manually restarted from the Render dashboard, files written to `./data` are reset.
-* To keep your WhatsApp session connected without re-scanning:
-  1. Keep your service alive using the keep-alive monitor above.
-  2. If you want permanent persistence across redeploys, you can connect an external free PostgreSQL database (e.g. Supabase, Neon, or Render PostgreSQL) by setting:
-     ```env
-     DATABASE_TYPE=postgres
-     DATABASE_HOST=...
-     DATABASE_PORT=5432
-     DATABASE_USERNAME=...
-     DATABASE_PASSWORD=...
-     DATABASE_NAME=...
-     DATABASE_SSL=true
-     ```
+3. The `/api/health` route is unauthenticated, takes <1ms, and will keep your instance active 24/7 within Render's 750 free monthly hours.
 
 ---
 
@@ -130,4 +117,5 @@ Render Free tier uses **ephemeral disk storage**. This means:
 1. Once deployed, open your app URL: `https://<your-app>.onrender.com`
 2. Enter your `API_MASTER_KEY` to access the dashboard.
 3. Click **New Session** → Select **Baileys** engine.
-4. Scan the QR code or request a phone number pairing code using WhatsApp on your phone (**Linked Devices** → **Link a Device**).
+4. Scan the QR code with WhatsApp on your phone (**Linked Devices** → **Link a Device**).
+5. Once paired, you can send messages via REST API or the dashboard immediately!

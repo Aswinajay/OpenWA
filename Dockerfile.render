@@ -40,6 +40,13 @@ FROM docker.io/node:22-slim AS production
 ENV NODE_ENV=production \
     PUPPETEER_SKIP_DOWNLOAD=true \
     ENGINE_TYPE=baileys \
+    OUTBOUND_ONLY=true \
+    BAILEYS_SYNC_HISTORY=false \
+    BAILEYS_SYNC_FULL_HISTORY=false \
+    MEDIA_DOWNLOAD_ENABLED=false \
+    BAILEYS_MARK_ONLINE_ON_CONNECT=false \
+    BAILEYS_MESSAGE_STORE_LIMIT=50 \
+    BAILEYS_SESSION_STORE_MAX_ENTRIES=100 \
     PORT=2785 \
     HOST=0.0.0.0 \
     DATABASE_TYPE=sqlite \
@@ -52,7 +59,7 @@ ENV NODE_ENV=production \
     MCP_ENABLED=false \
     SERVE_DASHBOARD=true \
     AUTO_START_SESSIONS=true \
-    NODE_OPTIONS="--max-old-space-size=384"
+    NODE_OPTIONS="--max-old-space-size=256 --optimize-for-size"
 
 WORKDIR /app
 
