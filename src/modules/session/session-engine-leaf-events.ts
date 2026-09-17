@@ -66,14 +66,6 @@ export class SessionEngineLeafEvents {
     }
 
     try {
-      // Read the status-broadcast chat's own recent messages rather than getContactStatuses(): on
-      // whatsapp-web.js the latter reads the StatusV3 collection, which loads asynchronously and is
-      // near-empty right after ready, so a status posted before connect would silently never reach the
-      // store. Fetching the chat's messages (the same on-demand fetch the chat-history endpoint uses)
-      // reliably returns the currently-active statuses with downloadable media/video, and each maps
-      // through the very buildIncomingStatus the live onMessage path uses — so a seeded status is
-      // indistinguishable from one that arrives live. No status.received webhook is dispatched here:
-      // this is a backfill of posts that predate the connection, not a live arrival.
       const mediaMaxBytes =
         this.configService?.get<number>('status.mediaMaxBytes', DEFAULT_MEDIA_MAX_BYTES) ?? DEFAULT_MEDIA_MAX_BYTES;
       const messages = await engine.getChatHistory('status@broadcast', STATUS_SEED_LIMIT, true, mediaMaxBytes);
@@ -118,14 +110,6 @@ export class SessionEngineLeafEvents {
     }
   }
 
-  /**
-   * Fan a neutral engine GroupEvent out to consumers: the WebSocket room and the webhook stream.
-   * The `kind` selects the event name (`group.join` / `group.leave` / `group.update` /
-   * `group.join_request`); the payload is the same plain camelCase shape on both channels, with
-   * `kind` itself carried by the name. There is no persistence here — group membership/metadata
-   * lives in the engine, not the message store — so unlike message edits there is nothing to
-   * apply before notifying.
-   */
   dispatchGroupEvent(id: string, event: GroupEvent): void {
     const payload: Record<string, unknown> = {
       groupId: event.groupId,
@@ -159,15 +143,6 @@ export class SessionEngineLeafEvents {
     }
   }
 
-  /**
-   * Reject a ringing call when the session opted in via `config.autoRejectCalls`. The session row
-   * is re-read here rather than trusting initializeEngine's closure snapshot — a call can arrive
-   * long after start, and the row is the only always-current source (mirrors
-   * handleEngineDisconnected). `config` is an untyped JSON column: only a strict boolean `true`
-   * opts in — truthy strings/numbers are ignored (the coercion discipline of
-   * resolveReconnectConfig). Never throws: a reject failure is logged, and the `call.received`
-   * dispatch already happened before this ran.
-   */
   async maybeAutoRejectCall(id: string, engine: IWhatsAppEngine, callId: string): Promise<void> {
     let session: Session | null;
     try {
