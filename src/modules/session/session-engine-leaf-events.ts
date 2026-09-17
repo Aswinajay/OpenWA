@@ -59,6 +59,12 @@ export class SessionEngineLeafEvents {
    * `(sessionId, waStatusId)`, so this can never double-count a status onMessage already ingested.
    */
   async seedStatuses(sessionId: string, engine: IWhatsAppEngine): Promise<void> {
+    if (process.env.SEND_ONLY_MODE === 'true') {
+      // A send-only gateway has no reason to backfill WhatsApp Status history. This prevents the
+      // connect-time `status@broadcast` fetch (and its contact/media work) from loading any history.
+      return;
+    }
+
     try {
       // Read the status-broadcast chat's own recent messages rather than getContactStatuses(): on
       // whatsapp-web.js the latter reads the StatusV3 collection, which loads asynchronously and is
@@ -68,16 +74,9 @@ export class SessionEngineLeafEvents {
       // through the very buildIncomingStatus the live onMessage path uses — so a seeded status is
       // indistinguishable from one that arrives live. No status.received webhook is dispatched here:
       // this is a backfill of posts that predate the connection, not a live arrival.
-      // Pre-gate media downloads at the store's own cap: a larger blob would be discarded as
-      // over_cap on ingest anyway, so downloading it is pure waste (heap + bandwidth).
       const mediaMaxBytes =
         this.configService?.get<number>('status.mediaMaxBytes', DEFAULT_MEDIA_MAX_BYTES) ?? DEFAULT_MEDIA_MAX_BYTES;
       const messages = await engine.getChatHistory('status@broadcast', STATUS_SEED_LIMIT, true, mediaMaxBytes);
-      // getChatHistory maps a message's contact from the sync cache only, so status posters (usually
-      // @lid ids) come back nameless. Resolve each unique poster once via getContactById — the same
-      // lookup the contacts API uses, which maps the @lid to the real contact — so a seeded status
-      // carries the poster's name like a live one does. Cached per JID: one lookup per contact, not
-      // one per status.
       const contactNames = new Map<string, { name?: string; pushName?: string }>();
       const resolvePoster = async (jid: string): Promise<{ name?: string; pushName?: string }> => {
         const cached = contactNames.get(jid);
@@ -94,12 +93,7 @@ export class SessionEngineLeafEvents {
       };
       for (const msg of messages) {
         try {
-          // Mirrors the live path's own-send drop: the broadcast chat's history also contains the
-          // account's OWN active statuses, which must not come back as if a contact had posted them.
           if (msg.fromMe) continue;
-          // A status whose 24h already ran out is hidden by WhatsApp and would only live until the
-          // next purge sweep — don't backfill it (its media was downloaded by getChatHistory
-          // regardless; this just skips the row).
           if (msg.timestamp * 1000 + STATUS_TTL_MS <= Date.now()) continue;
           const status = buildIncomingStatus(msg);
           if (!status) continue;
@@ -110,7 +104,6 @@ export class SessionEngineLeafEvents {
           }
           await this.statusStore.ingest(sessionId, status);
         } catch (itemErr) {
-          // One bad item must not abort the whole backfill.
           this.logger.warn('Status seed item skipped', {
             sessionId,
             error: itemErr instanceof Error ? itemErr.message : String(itemErr),
@@ -139,7 +132,6 @@ export class SessionEngineLeafEvents {
       participantIds: event.participantIds,
       timestamp: event.timestamp,
     };
-    // Optional fields are added only when present so consumers never see explicit `undefined`s.
     if (event.actorId !== undefined) {
       payload.actorId = event.actorId;
     }
