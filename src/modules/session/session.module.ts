@@ -21,24 +21,24 @@ import { ChatMediaModule } from '../chat-media/chat-media.module';
 import { AutomationModule } from '../automation/automation.module';
 import { PLUGIN_SESSION_PORT } from '../../core/plugins/plugin-host-ports';
 
+const optionalSessionModules =
+  process.env.LIGHTWEIGHT_MODE === 'true' ? [] : [ChatMediaModule, AutomationModule];
+
 @Module({
-  // WebhookModule/StatusStoreModule/ChatMediaModule/AutomationModule do not import SessionModule
-  // back, so the dependency is one-directional — no forwardRef() needed.
+  // Chat media archiving and automation are optional side effects. MessageProjector injects both
+  // services with @Optional(), so lightweight mode can omit their modules without changing the core
+  // session lifecycle or message persistence path.
   imports: [
     TypeOrmModule.forFeature([Session, Message], 'data'),
     WebhookModule,
     StatusStoreModule,
-    ChatMediaModule,
-    AutomationModule,
+    ...optionalSessionModules,
   ],
   controllers: [SessionController],
   providers: [
     // Global on purpose: any controller may carry a session dimension. Inert unless NODE_URL is set.
     { provide: APP_INTERCEPTOR, useClass: SessionProxyInterceptor },
     SessionService,
-    // onModuleInit only, and every module's runs before the first onApplicationBootstrap, so the
-    // legacy name-keyed auth directories are moved onto their session ids before auto-start or the
-    // HTTP listener can open one.
     SessionAuthDirMigration,
     SessionEngineLifecycle,
     SessionErrorStore,
@@ -48,10 +48,6 @@ import { PLUGIN_SESSION_PORT } from '../../core/plugins/plugin-host-ports';
     SessionLivenessWatchdog,
     SessionOwnershipService,
     MessageProjector,
-    // Binds the core-owned plugin capability port to this module's service; resolved lazily by the
-    // plugin runtime (PluginHostServices) so its provider cycle stays broken. An alias, not a
-    // factory: Nest runs lifecycle hooks once per non-alias provider, so a factory that returned the
-    // same instance ran SessionService's onModuleInit/onApplicationBootstrap/onModuleDestroy twice.
     { provide: PLUGIN_SESSION_PORT, useExisting: SessionService },
   ],
   exports: [SessionService, MessageProjector, SessionOwnershipService],
