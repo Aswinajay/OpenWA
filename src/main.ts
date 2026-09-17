@@ -57,8 +57,8 @@ async function loadBootstrapTarget(): Promise<BootstrapTarget> {
 
 /**
  * LIGHTWEIGHT_MODE is a deployment profile, not a collection of independent feature switches.
- * Normalize the environment before importing the selected Nest module so stale Render variables
- * cannot accidentally re-enable infrastructure that the profile is designed to avoid.
+ * Normalize it before importing the selected Nest module so stale Render variables cannot re-enable
+ * infrastructure the profile is designed to avoid or trip production validation first.
  */
 function normalizeLightweightEnvironment(): void {
   if (process.env.LIGHTWEIGHT_MODE !== 'true') return;
