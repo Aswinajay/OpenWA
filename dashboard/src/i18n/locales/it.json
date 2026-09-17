@@ -393,7 +393,8 @@
     },
     "start": {
       "teardownPendingTitle": "Avvio sessione",
-      "teardownPending": "Uno smontaggio delle credenziali per questa sessione è ancora in corso. Attendi un momento e riprova."
+      "teardownPending": "Uno smontaggio delle credenziali per questa sessione è ancora in corso. Attendi un momento e riprova.",
+      "errorTitle": "Avvio Fallito"
     },
     "restriction": {
       "reachout_timelock": "Nuove chat bloccate",

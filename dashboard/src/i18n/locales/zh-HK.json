@@ -393,7 +393,8 @@
     },
     "start": {
       "teardownPendingTitle": "工作階段啟動中",
-      "teardownPending": "此工作階段的憑證拆除仍在進行中。請稍候再試。"
+      "teardownPending": "此工作階段的憑證拆除仍在進行中。請稍候再試。",
+      "errorTitle": "啟動失敗"
     },
     "restriction": {
       "reachout_timelock": "新對話被封鎖",

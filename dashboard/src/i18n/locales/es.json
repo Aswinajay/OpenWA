@@ -393,7 +393,8 @@
     },
     "start": {
       "teardownPendingTitle": "Iniciando sesión",
-      "teardownPending": "El borrado de credenciales de esta sesión aún está en curso. Espere un momento e inténtelo de nuevo."
+      "teardownPending": "El borrado de credenciales de esta sesión aún está en curso. Espere un momento e inténtelo de nuevo.",
+      "errorTitle": "Error al iniciar"
     },
     "restriction": {
       "reachout_timelock": "Chats nuevos bloqueados",
