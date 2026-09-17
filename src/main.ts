@@ -55,6 +55,28 @@ async function loadBootstrapTarget(): Promise<BootstrapTarget> {
   };
 }
 
+/**
+ * LIGHTWEIGHT_MODE is a deployment profile, not a collection of independent feature switches.
+ * Normalize the environment before importing the selected Nest module so stale Render variables
+ * cannot accidentally re-enable infrastructure that the profile is designed to avoid.
+ */
+function normalizeLightweightEnvironment(): void {
+  if (process.env.LIGHTWEIGHT_MODE !== 'true') return;
+
+  process.env.DATABASE_TYPE = 'sqlite';
+  process.env.ENGINE_TYPE = 'whatsapp-web.js';
+  process.env.REDIS_ENABLED = 'false';
+  process.env.QUEUE_ENABLED = 'false';
+  process.env.SEARCH_ENABLED = 'false';
+  process.env.MCP_ENABLED = 'false';
+  process.env.CACHE_ENABLED = 'false';
+  process.env.STORAGE_TYPE = 'local';
+  process.env.AUTO_START_SESSIONS = 'false';
+  process.env.DATABASE_NAME ??= './data/openwa.sqlite';
+  process.env.SESSION_DATA_PATH ??= './data/sessions';
+  process.env.STORAGE_LOCAL_PATH ??= './data/media';
+}
+
 // The created app, exposed at module scope so the fatal handler below can run a best-effort teardown
 // (engine sessions, Redis/pg) when bootstrap fails AFTER NestFactory.create succeeded — notably a
 // listen() bind failure (EADDRINUSE), where full init already ran.
@@ -90,6 +112,8 @@ async function bootstrap() {
         'Set NODE_ENV=production for a production deployment.',
     );
   }
+
+  normalizeLightweightEnvironment();
 
   // Fail fast: never start production with default/placeholder secrets.
   assertNoDefaultSecretsInProduction({
