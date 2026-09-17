@@ -46,40 +46,46 @@ const mainDatabase = TypeOrmModule.forRootAsync({
   name: 'main',
   imports: [ConfigModule],
   inject: [ConfigService],
-  useFactory: (configService: ConfigService) => ({
-    name: 'main',
-    type: 'better-sqlite3' as const,
-    database: configService.get<string>('database.database', './data/main.sqlite'),
-    entities: [__dirname + '/modules/auth/**/*.entity{.ts,.js}'],
-    migrations: [__dirname + '/database/migrations-main/*{.ts,.js}'],
-    synchronize: configService.get<boolean>('database.synchronize', true),
-    migrationsRun: !configService.get<boolean>('database.synchronize', true),
-    logging: configService.get<boolean>('database.logging', false),
-  }),
+  useFactory: (configService: ConfigService) => {
+    const synchronize = configService.get<boolean>('database.synchronize', true);
+    return {
+      name: 'main',
+      type: 'better-sqlite3' as const,
+      database: configService.get<string>('database.database', './data/main.sqlite'),
+      entities: [__dirname + '/modules/auth/**/*.entity{.ts,.js}'],
+      migrations: [__dirname + '/database/migrations-main/*{.ts,.js}'],
+      synchronize,
+      migrationsRun: !synchronize,
+      logging: configService.get<boolean>('database.logging', false),
+    };
+  },
 });
 
 const dataDatabase = TypeOrmModule.forRootAsync({
   name: 'data',
   imports: [ConfigModule],
   inject: [ConfigService],
-  useFactory: (configService: ConfigService) => ({
-    name: 'data',
-    type: 'better-sqlite3' as const,
-    database: configService.get<string>('dataDatabase.database', './data/openwa.sqlite'),
-    entities: [
-      __dirname + '/modules/session/**/*.entity{.ts,.js}',
-      __dirname + '/modules/webhook/**/*.entity{.ts,.js}',
-      __dirname + '/modules/message/**/*.entity{.ts,.js}',
-      __dirname + '/modules/template/**/*.entity{.ts,.js}',
-      __dirname + '/engine/**/*.entity{.ts,.js}',
-      __dirname + '/modules/integration/**/*.entity{.ts,.js}',
-      __dirname + '/modules/status-store/**/*.entity{.ts,.js}',
-    ],
-    migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
-    synchronize: configService.get<boolean>('dataDatabase.synchronize', true),
-    migrationsRun: !configService.get<boolean>('dataDatabase.synchronize', true),
-    logging: configService.get<boolean>('dataDatabase.logging', false),
-  }),
+  useFactory: (configService: ConfigService) => {
+    const synchronize = configService.get<boolean>('dataDatabase.synchronize', true);
+    return {
+      name: 'data',
+      type: 'better-sqlite3' as const,
+      database: configService.get<string>('dataDatabase.database', './data/openwa.sqlite'),
+      entities: [
+        __dirname + '/modules/session/**/*.entity{.ts,.js}',
+        __dirname + '/modules/webhook/**/*.entity{.ts,.js}',
+        __dirname + '/modules/message/**/*.entity{.ts,.js}',
+        __dirname + '/modules/template/**/*.entity{.ts,.js}',
+        __dirname + '/engine/**/*.entity{.ts,.js}',
+        __dirname + '/modules/integration/**/*.entity{.ts,.js}',
+        __dirname + '/modules/status-store/**/*.entity{.ts,.js}',
+      ],
+      migrations: [__dirname + '/database/migrations/*{.ts,.js}'],
+      synchronize,
+      migrationsRun: !synchronize,
+      logging: configService.get<boolean>('dataDatabase.logging', false),
+    };
+  },
 });
 
 const throttler = ThrottlerModule.forRootAsync({
@@ -87,9 +93,21 @@ const throttler = ThrottlerModule.forRootAsync({
   inject: [ConfigService],
   useFactory: (configService: ConfigService) => ({
     throttlers: [
-      { name: 'short', ttl: configService.get<number>('api.rateLimit.shortTtl', 1000), limit: configService.get<number>('api.rateLimit.shortLimit', 10) },
-      { name: 'medium', ttl: configService.get<number>('api.rateLimit.mediumTtl', 60000), limit: configService.get<number>('api.rateLimit.mediumLimit', 100) },
-      { name: 'long', ttl: configService.get<number>('api.rateLimit.longTtl', 3600000), limit: configService.get<number>('api.rateLimit.longLimit', 1000) },
+      {
+        name: 'short',
+        ttl: configService.get<number>('api.rateLimit.shortTtl', 1000),
+        limit: configService.get<number>('api.rateLimit.shortLimit', 10),
+      },
+      {
+        name: 'medium',
+        ttl: configService.get<number>('api.rateLimit.mediumTtl', 60000),
+        limit: configService.get<number>('api.rateLimit.mediumLimit', 100),
+      },
+      {
+        name: 'long',
+        ttl: configService.get<number>('api.rateLimit.longTtl', 3600000),
+        limit: configService.get<number>('api.rateLimit.longLimit', 1000),
+      },
     ],
   }),
 });
