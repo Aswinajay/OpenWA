@@ -1,7 +1,7 @@
 {
-  "name": "openwa",
+  "name": "notify-gateway",
   "version": "0.23.5",
-  "description": "Open Source WhatsApp API Gateway - Free, Self-Hosted HTTP API for WhatsApp",
+  "description": "Lightweight notification and messaging API gateway",
   "author": "Yudhi Armyndharis & OpenWA Contributors",
   "private": true,
   "license": "MIT",
