@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed start in the dashboard that left no engine shows the gateway's error in a toast.
 - The dashboard closes a session's QR modal when the session fails, or disconnects with no engine left, instead of leaving it spinning.
 - The dashboard disables a session's Start and Reconnect buttons while its start request is in flight.
+- A Baileys session added to or joining a group emits `group.join`, as whatsapp-web.js already did.
 
 ### Documentation
 
