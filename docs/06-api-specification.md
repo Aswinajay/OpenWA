@@ -6306,7 +6306,7 @@ repeat.
 
 Incoming-call management. A `call.received` webhook/socket event (§6.6) announces an incoming ringing call and carries the `callId` used below.
 
-> **Call rejection and the call outcome events are Baileys only, and `call.received` is not reliable on whatsapp-web.js.** Both engines dispatch `call.received`, but on whatsapp-web.js it fired in a live test on 2026-09-17 and did not in one on 2026-08-10. whatsapp-web.js cannot reject a call: a rejection it sent did not stop the call from ringing in a live test, so `autoRejectCalls` has no effect there either. The caller id in `from` may be an `@lid` privacy id on either engine; resolve it with `GET /api/sessions/:sessionId/contacts/:contactId/phone`. `POST .../calls/link` works on both engines.
+> **Call rejection and the call outcome events are Baileys only, and `call.received` is not reliable on whatsapp-web.js.** Both engines dispatch `call.received`, but on whatsapp-web.js it fired in a live test on 2026-09-17 and did not in one on 2026-08-10. whatsapp-web.js cannot reject a call: a rejection it sent did not stop the call from ringing in a live test, so the reject route answers `501` there and `autoRejectCalls` logs a failed auto-reject instead. The caller id in `from` may be an `@lid` privacy id on either engine; resolve it with `GET /api/sessions/:sessionId/contacts/:contactId/phone`. `POST .../calls/link` works on both engines.
 
 #### POST /api/sessions/:sessionId/calls/link
 
@@ -6348,7 +6348,7 @@ Generate a shareable WhatsApp call link.
 
 #### POST /api/sessions/:sessionId/calls/:callId/reject
 
-Reject a currently ringing incoming call. Only a live call can be rejected — the id is valid while the call rings (a short server-side cache); afterwards it expires.
+Reject a currently ringing incoming call. **Baileys only**: the whatsapp-web.js engine answers `501`. Only a live call can be rejected — the id is valid while the call rings (a short server-side cache); afterwards it expires.
 
 **Auth:** API key (OPERATOR)
 
@@ -6363,7 +6363,7 @@ Reject a currently ringing incoming call. Only a live call can be rejected — t
 
 **Response** `200` — `{ "success": true }`
 
-**Errors:** `400` session is not started · `401` missing/invalid `X-API-Key` · `403` key lacks OPERATOR role · `404` call not found or no longer ringing · `409` conflict or engine not ready (retryable) · `503` session not ready or dependency unavailable (retryable)
+**Errors:** `400` session is not started · `401` missing/invalid `X-API-Key` · `403` key lacks OPERATOR role · `404` call not found or no longer ringing · `409` conflict or engine not ready (retryable) · `501` the whatsapp-web.js engine cannot reject a call · `503` session not ready or dependency unavailable (retryable)
 
 > **Auto-reject per session.** Set `"config": { "autoRejectCalls": true }` when creating a session to have the server reject every incoming call automatically — the `call.received` event is still dispatched first, so automations keep full visibility. Baileys only; see the note at the top of this section.
 

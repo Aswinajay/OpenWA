@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A failed start in the dashboard that left no engine shows the gateway's error in a toast.
 - The dashboard closes a session's QR modal when the session fails, or disconnects with no engine left, instead of leaving it spinning.
 - The dashboard disables a session's Start and Reconnect buttons while its start request is in flight.
+- whatsapp-web.js sessions no longer report a call rejection that did not stop the call: the call reject route answers `501` and `autoRejectCalls` logs a failed auto-reject.
 
 ### Documentation
 
@@ -44,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Re-export after upgrading for an archive whose stamps are the instants they claim; restoring a pre-release archive carries its shift in as it is.
 - A WebSocket client can now be disconnected with an `UNAUTHORIZED` frame up to a minute after its key changed, where before only the node that processed the change disconnected it; reconnect and resubscribe on that frame. A rename, and the key's usage counters, evict nobody.
 - A caller-supplied URL leaves through the session proxy from this release. Set `SESSION_PROXY_URL_FETCH=false` when a session proxy is a WhatsApp-only route that cannot reach arbitrary media hosts.
+- whatsapp-web.js: `POST /api/sessions/{sessionId}/calls/{callId}/reject` answers `501` instead of a `200` that did not stop the call from ringing.
 
 ### Security
 
