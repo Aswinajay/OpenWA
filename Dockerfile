@@ -106,5 +106,5 @@ USER openwa
 
 EXPOSE 2785
 
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["/app/scripts/docker-entrypoint-lite.sh"]
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/app/scripts/docker-entrypoint-lite.sh"]
+CMD ["node", "--optimize-for-size", "dist/main"]
