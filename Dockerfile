@@ -1,14 +1,13 @@
 # =====================================================================
-# OpenWA - Ultra-Lightweight Dockerfile with Cloudflare Tunnel Support
+# OpenWA - Ultra-Lightweight Dockerfile for Render Free Tier (Send-Only)
 # =====================================================================
 # Key optimizations for Free Tiers (Render, Back4App, 256MB/512MB RAM):
 # 1. Omits Chromium, Puppeteer browser download, X11, GTK, & ffmpeg
-#    (Reduces image size from ~2.2 GB to ~180 MB, build time to ~2m)
+#    (Reduces image size from ~2.2 GB to ~160 MB, build time to ~2m)
 # 2. Defaults to ENGINE_TYPE=baileys (WebSockets, no browser)
 #    (Consumes ~60 MB RAM instead of ~500+ MB with Chrome)
 # 3. Restricts V8 heap via NODE_OPTIONS="--max-old-space-size=180"
-# 4. Built-in Cloudflare Tunnel support (cloudflared) for $0 custom domain
-# 5. Disables memory-heavy background queues, Redis, and search indexer
+# 4. Disables memory-heavy background queues, Redis, and search indexer
 # =====================================================================
 
 # ===== Stage 1: Builder =====
@@ -16,18 +15,12 @@ FROM docker.io/node:22-slim AS builder
 
 WORKDIR /app
 
-# Minimal build tools for native compilation and download cloudflared
+# Minimal build tools for native compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     make \
     g++ \
-    curl \
-    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# Download and install cloudflared via script (avoids Kaniko variable parser error)
-COPY scripts/install-cloudflared.sh ./scripts/
-RUN chmod +x ./scripts/install-cloudflared.sh && ./scripts/install-cloudflared.sh
 
 COPY package*.json ./
 COPY scripts/postinstall.js ./scripts/
@@ -78,9 +71,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy cloudflared binary from builder stage
-COPY --from=builder /usr/local/bin/cloudflared /usr/local/bin/cloudflared
-
 # Non-root user for security
 RUN groupadd -r openwa && useradd -r -g openwa openwa
 
@@ -107,4 +97,4 @@ USER openwa
 EXPOSE 2785
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--", "/app/scripts/docker-entrypoint-lite.sh"]
-CMD ["node", "--optimize-for-size", "dist/main"]
+CMD ["node", "dist/main"]
