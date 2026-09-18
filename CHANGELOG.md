@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An ingress route's declared ack `content-type` reaches the provider instead of being overwritten with `text/plain`, so a provider that requires `application/json` on a 200 or 202 accepts the ack; a type a browser could execute is still forced to `text/plain` ([#1637](https://github.com/rmyndharis/OpenWA/issues/1637)). Thanks @wesamdev for the report.
 - Restoring a data archive into PostgreSQL from a gateway that does not run in UTC no longer shifts every timestamp by the host offset, and no longer shifts it again on each further restore ([#1624](https://github.com/rmyndharis/OpenWA/issues/1624)).
 - Retention sweeps on PostgreSQL delete the rows their window names instead of taking up to the host's UTC offset of younger rows with them, and the `today` message counts cover the host's local day.
 - Session leases on PostgreSQL compare as instants across nodes in different time zones and across a daylight-saving change.
