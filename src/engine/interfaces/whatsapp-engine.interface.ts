@@ -642,15 +642,15 @@ export interface GroupEvent {
 
 /**
  * An incoming (ringing) call, mapped at the adapter boundary to this neutral shape:
- *  - whatsapp-web.js: the client `call` event (a `Call` object the adapter caches so a later
- *    `rejectCall` can act on it — the object is only usable while the call is live).
+ *  - whatsapp-web.js: the client `call` event (the adapter caches the ringing call id so a repeated
+ *    signal for the same call is not announced twice).
  *  - Baileys: the `call` event's `offer` status entries (other statuses are lifecycle updates and
  *    are not surfaced).
  * All ids are in the neutral dialect (`@c.us`; a lid caller stays `<id>@lid` when the lid->phone
  * mapping is unknown, resolved via the inline phone twin when the engine provides one).
  */
 export interface IncomingCallEvent {
-  /** Engine call id; the handle `rejectCall` accepts while the call is still ringing. */
+  /** Engine call id; the id `rejectCall` accepts while the call is still ringing (Baileys). */
   callId: string;
   /** Neutral caller id. */
   from: string;
@@ -773,9 +773,9 @@ export interface EngineEventCallbacks {
    */
   onGroupEvent?: (event: GroupEvent) => void;
   /**
-   * Fired when an incoming call starts ringing (consumers emit `call.received`). The call can be
-   * rejected via `rejectCall(callId)` only while it is still ringing — the adapter keeps the
-   * engine's live call handle cached for that window.
+   * Fired when an incoming call starts ringing (consumers emit `call.received`). On Baileys the call
+   * can be rejected via `rejectCall(callId)` only while it is still ringing: the adapter keeps what
+   * the rejection needs cached for that window. whatsapp-web.js refuses `rejectCall`.
    */
   onCall?: (event: IncomingCallEvent) => void;
   /**
@@ -1208,9 +1208,10 @@ export interface GroupCapability {
  */
 export interface CallCapability {
   /**
-   * Reject an incoming call. Only a currently-ringing call can be rejected: the adapter keeps the
-   * engine's live call handle (keyed by the `callId` from {@link IncomingCallEvent}) for the
-   * ringing window, and an unknown or expired callId fails with a not-found error (HTTP 404).
+   * Reject an incoming call. Only a currently-ringing call can be rejected: the Baileys adapter keeps
+   * the caller JID it needs (keyed by the `callId` from {@link IncomingCallEvent}) for the ringing
+   * window, and an unknown or expired callId fails with a not-found error (HTTP 404). whatsapp-web.js
+   * throws EngineNotSupportedError (HTTP 501): a rejection it sent did not stop a live call ringing.
    */
   rejectCall(callId: string): Promise<void>;
 
