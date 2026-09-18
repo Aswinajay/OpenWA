@@ -618,7 +618,8 @@ export interface ReactionEvent {
  *  - whatsapp-web.js: `group_join` / `group_leave` / `group_update` /
  *    `group_membership_request` (GroupNotification).
  *  - Baileys: `group-participants.update` (add/remove only — promote/demote are not
- *    surfaced), `groups.update` (subject/desc/announce/restrict) and `group.join-request`
+ *    surfaced), `groups.update` (subject/desc/announce/restrict), `groups.upsert` (this
+ *    session added to or joining a group; participantIds is the session's own id) and `group.join-request`
  *    (action 'created' only — the wwebjs event has no revoke/reject counterpart, so only
  *    the shared signal is surfaced; rc13 itself emits the event only for non-admin-add
  *    requests — the direct self-request stub 144 is unhandled upstream, marked TODO at

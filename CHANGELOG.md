@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dashboard closes a session's QR modal when the session fails, or disconnects with no engine left, instead of leaving it spinning.
 - The dashboard disables a session's Start and Reconnect buttons while its start request is in flight.
 - whatsapp-web.js sessions no longer report a call rejection that did not stop the call: the call reject route answers `501` and `autoRejectCalls` logs a failed auto-reject.
+- A Baileys session added to or joining a group emits `group.join`, as whatsapp-web.js already did.
 
 ### Documentation
 
